@@ -1,0 +1,456 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+
+-- Удаление старой версии
+if CoreGui:FindFirstChild("PiggyPremiumMenu") then
+    CoreGui.PiggyPremiumMenu:Destroy()
+end
+
+-- Создание ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PiggyPremiumMenu"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+-- НАСТРОЙКИ ФУНКЦИЙ
+local walkSpeedValue = 16
+local jumpPowerValue = 50
+local espEnabled = false
+local noclipEnabled = false
+local infJumpEnabled = false
+local highlights = {}
+
+-- ФУНКЦИЯ ДЛЯ ПЕРЕТАСКИВАНИЯ (Универсальная для круглого и квадратного меню)
+local function makeDraggable(frame, target)
+    target = target or frame
+    local dragging, dragInput, dragStart, startPos
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = target.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- ОПРЕДЕЛЕНИЕ РОЛИ ДЛЯ ESP (Красный - Пигги/Бот, Зеленый - Игрок)
+local function getESPColor(playerOrModel)
+    if playerOrModel:IsA("Player") then
+        local isPiggy = playerOrModel:GetAttribute("IsPiggy") or playerOrModel.Team == game.Teams:FindFirstChild("Piggy")
+        if isPiggy then
+            return Color3.fromRGB(255, 30, 30) -- Красный для Пигги-Игрока
+        else
+            return Color3.fromRGB(30, 255, 30) -- Зеленый для Выжившего
+        end
+    else
+        -- Если это бот (на картах Piggy они обычно NPC модели)
+        if playerOrModel.Name:lower():find("piggy") or playerOrModel:FindFirstChild("Piggy") or playerOrModel:GetAttribute("Bot") then
+            return Color3.fromRGB(255, 30, 30) -- Красный для Бота Пигги
+        end
+    end
+    return Color3.fromRGB(30, 255, 30)
+end
+
+-- ЛОГИКА ESP (CHAMS)
+local function applyESP(object)
+    if not espEnabled then return end
+    if object:FindFirstChild("ESPHighlight") then return end
+    
+    local isCharacter = false
+    local targetColor = Color3.fromRGB(30, 255, 30)
+
+    if Players:GetPlayerFromCharacter(object) then
+        isCharacter = true
+        targetColor = getESPColor(Players:GetPlayerFromCharacter(object))
+    elseif object.Name:lower():find("piggy") or object:findFirstChild("Humanoid") then
+        isCharacter = true
+        targetColor = getESPColor(object)
+    end
+
+    if isCharacter and object ~= LocalPlayer.Character then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ESPHighlight"
+        highlight.FillColor = targetColor
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.35
+        highlight.OutlineTransparency = 0.1
+        highlight.Adornee = object
+        highlight.Parent = object
+        table.insert(highlights, highlight)
+    end
+end
+
+local function removeESP()
+    for _, highlight in pairs(highlights) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    table.clear(highlights)
+end
+
+-- КРУГЛОЕ МЕНЮ (Увеличено, Перетаскивается)
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleButton.Size = UDim2.new(0, 75, 0, 75)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+ToggleButton.Image = "rbxassetid://12313620931" 
+ToggleButton.ImageColor3 = Color3.fromRGB(140, 50, 230)
+
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(1, 0)
+buttonCorner.Parent = ToggleButton
+makeDraggable(ToggleButton)
+
+-- ОСНОВНОЕ ОКНО (Адаптировано под мобильные, перетаскивается)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.Position = UDim2.new(0.3, 0, 0.15, 0)
+MainFrame.Size = UDim2.new(0, 440, 0, 280) -- Фиксированный и компактный размер
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 16)
+frameCorner.Parent = MainFrame
+
+-- Хедер для перетаскивания (Верхняя плашка окна)
+local DragHeader = Instance.new("Frame")
+DragHeader.Name = "DragHeader"
+DragHeader.Parent = MainFrame
+DragHeader.Size = UDim2.new(1, 0, 0, 30)
+DragHeader.BackgroundTransparency = 1
+makeDraggable(DragHeader, MainFrame)
+
+-- Красивая разделительная линия
+local SeparatorLine = Instance.new("Frame")
+SeparatorLine.Name = "SeparatorLine"
+SeparatorLine.Parent = MainFrame
+SeparatorLine.Position = UDim2.new(0, 120, 0, 15)
+SeparatorLine.Size = UDim2.new(0, 2, 0, 250)
+SeparatorLine.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
+SeparatorLine.BorderSizePixel = 0
+
+-- ВКЛАДКИ
+local TabsFrame = Instance.new("Frame")
+TabsFrame.Name = "TabsFrame"
+TabsFrame.Parent = MainFrame
+TabsFrame.Position = UDim2.new(0, 8, 0, 40)
+TabsFrame.Size = UDim2.new(0, 105, 0, 230)
+TabsFrame.BackgroundTransparency = 1
+
+local PlayerTabBtn = Instance.new("TextButton")
+PlayerTabBtn.Parent = TabsFrame
+PlayerTabBtn.Size = UDim2.new(1, 0, 0, 35)
+PlayerTabBtn.Position = UDim2.new(0, 0, 0, 0)
+PlayerTabBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+PlayerTabBtn.Text = "Player"
+PlayerTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerTabBtn.Font = Enum.Font.SourceSansBold
+PlayerTabBtn.TextSize = 15
+Instance.new("UICorner", PlayerTabBtn).CornerRadius = UDim.new(0, 6)
+
+local RenderTabBtn = Instance.new("TextButton")
+RenderTabBtn.Parent = TabsFrame
+RenderTabBtn.Size = UDim2.new(1, 0, 0, 35)
+RenderTabBtn.Position = UDim2.new(0, 0, 0, 45)
+RenderTabBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+RenderTabBtn.Text = "Render/ESP"
+RenderTabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+RenderTabBtn.Font = Enum.Font.SourceSansBold
+RenderTabBtn.TextSize = 15
+Instance.new("UICorner", RenderTabBtn).CornerRadius = UDim.new(0, 6)
+
+-- СТРАНИЦЫ КОНТЕНТА
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Parent = MainFrame
+ContentFrame.Position = UDim2.new(0, 135, 0, 20)
+ContentFrame.Size = UDim2.new(0, 290, 0, 250)
+ContentFrame.BackgroundTransparency = 1
+
+local PlayerPage = Instance.new("ScrollingFrame")
+PlayerPage.Parent = ContentFrame
+PlayerPage.Size = UDim2.new(1, 0, 1, 0)
+PlayerPage.BackgroundTransparency = 1
+PlayerPage.ScrollBarThickness = 4
+PlayerPage.CanvasSize = UDim2.new(0, 0, 0, 320)
+
+-- Кастомизация WalkSpeed
+local WSLabel = Instance.new("TextLabel")
+WSLabel.Parent = PlayerPage
+WSLabel.Position = UDim2.new(0, 0, 0, 5)
+WSLabel.Size = UDim2.new(0, 100, 0, 25)
+WSLabel.Text = "WalkSpeed:"
+WSLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+WSLabel.Font = Enum.Font.SourceSansSemibold
+WSLabel.TextSize = 15
+WSLabel.TextXAlignment = Enum.TextXAlignment.Left
+WSLabel.BackgroundTransparency = 1
+
+local WSInput = Instance.new("TextBox")
+WSInput.Parent = PlayerPage
+WSInput.Position = UDim2.new(0, 110, 0, 5)
+WSInput.Size = UDim2.new(0, 60, 0, 25)
+WSInput.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+WSInput.Text = "16"
+WSInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", WSInput).CornerRadius = UDim.new(0, 6)
+
+-- Кастомизация Jump Boost
+local JBLabel = Instance.new("TextLabel")
+JBLabel.Parent = PlayerPage
+JBLabel.Position = UDim2.new(0, 0, 0, 40)
+JBLabel.Size = UDim2.new(0, 100, 0, 25)
+JBLabel.Text = "Jump Boost:"
+JBLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+JBLabel.Font = Enum.Font.SourceSansSemibold
+JBLabel.TextSize = 15
+JBLabel.TextXAlignment = Enum.TextXAlignment.Left
+JBLabel.BackgroundTransparency = 1
+
+local JBInput = Instance.new("TextBox")
+JBInput.Parent = PlayerPage
+JBInput.Position = UDim2.new(0, 110, 0, 40)
+JBInput.Size = UDim2.new(0, 60, 0, 25)
+JBInput.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+JBInput.Text = "50"
+JBInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", JBInput).CornerRadius = UDim.new(0, 6)
+
+-- Кнопка Noclip
+local NoclipBtn = Instance.new("TextButton")
+NoclipBtn.Parent = PlayerPage
+NoclipBtn.Position = UDim2.new(0, 0, 0, 75)
+NoclipBtn.Size = UDim2.new(0, 120, 0, 30)
+NoclipBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+NoclipBtn.Text = "Noclip: OFF"
+NoclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+NoclipBtn.Font = Enum.Font.SourceSansBold
+NoclipBtn.TextSize = 14
+Instance.new("UICorner", NoclipBtn).CornerRadius = UDim.new(0, 6)
+
+-- Кнопка Infinite Jump
+local InfJumpBtn = Instance.new("TextButton")
+InfJumpBtn.Parent = PlayerPage
+InfJumpBtn.Position = UDim2.new(0, 130, 0, 75)
+InfJumpBtn.Size = UDim2.new(0, 120, 0, 30)
+InfJumpBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+InfJumpBtn.Text = "Inf Jump: OFF"
+InfJumpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+InfJumpBtn.Font = Enum.Font.SourceSansBold
+InfJumpBtn.TextSize = 14
+Instance.new("UICorner", InfJumpBtn).CornerRadius = UDim.new(0, 6)
+
+-- Раздел Give Item
+local ItemLabel = Instance.new("TextLabel")
+ItemLabel.Parent = PlayerPage
+ItemLabel.Position = UDim2.new(0, 0, 0, 115)
+ItemLabel.Size = UDim2.new(1, 0, 0, 20)
+ItemLabel.Text = "Give Item (Click Icon):"
+ItemLabel.TextColor3 = Color3.fromRGB(140, 50, 230)
+ItemLabel.Font = Enum.Font.SourceSansBold
+ItemLabel.TextSize = 15
+ItemLabel.TextXAlignment = Enum.TextXAlignment.Left
+ItemLabel.BackgroundTransparency = 1
+
+local HammerBtn = Instance.new("ImageButton")
+HammerBtn.Parent = PlayerPage
+HammerBtn.Position = UDim2.new(0, 10, 0, 140)
+HammerBtn.Size = UDim2.new(0, 60, 0, 60)
+HammerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+HammerBtn.Image = "rbxassetid://9720021319" -- Проверенный ассет Молотка
+Instance.new("UICorner", HammerBtn).CornerRadius = UDim.new(0, 8)
+
+local GunBtn = Instance.new("ImageButton")
+GunBtn.Parent = PlayerPage
+GunBtn.Position = UDim2.new(0, 85, 0, 140)
+GunBtn.Size = UDim2.new(0, 60, 0, 60)
+GunBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+GunBtn.Image = "rbxassetid://4831641047" -- Проверенный ассет Пистолета
+Instance.new("UICorner", GunBtn).CornerRadius = UDim.new(0, 8)
+
+
+-- Вкладка Render/ESP
+local RenderPage = Instance.new("Frame")
+RenderPage.Parent = ContentFrame
+RenderPage.Size = UDim2.new(1, 0, 1, 0)
+RenderPage.BackgroundTransparency = 1
+RenderPage.Visible = false
+
+local ESPToggle = Instance.new("TextButton")
+ESPToggle.Parent = RenderPage
+ESPToggle.Position = UDim2.new(0, 10, 0, 20)
+ESPToggle.Size = UDim2.new(0, 240, 0, 40)
+ESPToggle.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+ESPToggle.Text = "ESP (Chams): OFF"
+ESPToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+ESPToggle.Font = Enum.Font.SourceSansBold
+ESPToggle.TextSize = 16
+Instance.new("UICorner", ESPToggle).CornerRadius = UDim.new(0, 8)
+
+
+-- СТРИМИНГ И ЛОГИКА ФУНКЦИЙ
+
+-- Вкладки
+PlayerTabBtn.MouseButton1Click:Connect(function()
+    PlayerPage.Visible = true
+    RenderPage.Visible = false
+    PlayerTabBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+    PlayerTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RenderTabBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+    RenderTabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+end)
+
+RenderTabBtn.MouseButton1Click:Connect(function()
+    PlayerPage.Visible = false
+    RenderPage.Visible = true
+    RenderTabBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+    RenderTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PlayerTabBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+    PlayerTabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    if not dragging then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+-- WalkSpeed логика
+WSInput.FocusLost:Connect(function()
+    local num = tonumber(WSInput.Text)
+    if num then walkSpeedValue = num else WSInput.Text = tostring(walkSpeedValue) end
+end)
+
+-- Jump Boost логика (Ограничение 21 - 100)
+JBInput.FocusLost:Connect(function()
+    local num = tonumber(JBInput.Text)
+    if num then
+        if num < 21 then num = 21 end
+        if num > 100 then num = 100 end
+        jumpPowerValue = num
+        JBInput.Text = tostring(jumpPowerValue)
+    else
+        JBInput.Text = tostring(jumpPowerValue)
+    end
+end)
+
+-- Цикл применения характеристик
+RunService.RenderStepped:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        hum.WalkSpeed = walkSpeedValue
+        hum.JumpPower = jumpPowerValue
+        hum.UseJumpPower = true
+    end
+    
+    -- Реализация Noclip
+    if noclipEnabled and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Логика Noclip кнопки
+NoclipBtn.MouseButton1Click:Connect(function()
+    noclipEnabled = not noclipEnabled
+    if noclipEnabled then
+        NoclipBtn.Text = "Noclip: ON"
+        NoclipBtn.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
+    else
+        NoclipBtn.Text = "Noclip: OFF"
+        NoclipBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    end
+end)
+
+-- Логика Infinite Jump
+UserInputService.JumpRequest:Connect(function()
+    if infJumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+InfJumpBtn.MouseButton1Click:Connect(function()
+    infJumpEnabled = not infJumpEnabled
+    if infJumpEnabled then
+        InfJumpBtn.Text = "Inf Jump: ON"
+        InfJumpBtn.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
+    else
+        InfJumpBtn.Text = "Inf Jump: OFF"
+        InfJumpBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    end
+end)
+
+-- Функция выдачи предметов (Безопасное принудительное добавление)
+local function giveItem(itemName)
+    local tool = Instance.new("Tool")
+    tool.Name = itemName
+    tool.RequiresHandle = true
+    
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(1, 1, 2)
+    handle.Transparency = 0.5 -- Слегка прозрачный, чтобы точно увидеть появление
+    handle.Parent = tool
+    
+    tool.Parent = LocalPlayer.Backpack
+end
+
+HammerBtn.MouseButton1Click:Connect(function() giveItem("Hammer") end)
+GunBtn.MouseButton1Click:Connect(function() giveItem("Gun") end)
+
+-- Переключатель работы ESP
+ESPToggle.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    if espEnabled then
+        ESPToggle.Text = "ESP (Chams): ON"
+        ESPToggle.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
+        
+        -- Поиск всех игроков
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character then applyESP(p.Character) end
+            p.CharacterAdded:Connect(applyESP)
+        end
+        -- Поиск ботов на карте
+        for _, obj in pairs(workspace:GetChildren()) do
+            applyESP(obj)
+        end
+        workspace.ChildAdded:Connect(applyESP)
+    else
+        ESPToggle.Text = "ESP (Chams): OFF"
+        ESPToggle.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+        removeESP()
+    end
+end)
