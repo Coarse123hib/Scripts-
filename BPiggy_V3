@@ -1,0 +1,383 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+
+-- Удаление старой версии, если она была
+if CoreGui:FindFirstChild("PiggyPremiumMenu") then
+    CoreGui.PiggyPremiumMenu:Destroy()
+end
+
+-- Создание ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PiggyPremiumMenu"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+-- ПЕРЕМЕННЫЕ НАСТРОЕК
+local walkSpeedValue = 16
+local jumpPowerValue = 50
+local espEnabled = false
+local highlights = {}
+
+-- ФУНКЦИЯ ОБНОВЛЕНИЯ ESP (CHAMS)
+local function applyESP(character, isPiggy)
+    if not espEnabled then return end
+    if character:FindFirstChild("ESPHighlight") then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESPHighlight"
+    highlight.FillColor = Color3.fromRGB(138, 43, 226) -- Фиолетовый цвет
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.4
+    highlight.OutlineTransparency = 0.1
+    highlight.Adornee = character
+    highlight.Parent = character
+    table.insert(highlights, highlight)
+end
+
+local function removeESP()
+    for _, highlight in pairs(highlights) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    table.clear(highlights)
+end
+
+local function checkAndApplyESP(player)
+    if player == LocalPlayer then return end
+    if player.Character then
+        local isPiggy = player:GetAttribute("IsPiggy") or player.Team == game.Teams:FindFirstChild("Piggy")
+        applyESP(player.Character, isPiggy)
+    end
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        local isPiggy = player:GetAttribute("IsPiggy") or player.Team == game.Teams:FindFirstChild("Piggy")
+        applyESP(char, isPiggy)
+    end)
+end
+
+-- КРУГЛАЯ КНОПКА-МЕНЮ (БОЛЬШЕ И ПЕРЕТАСКИВАЕМАЯ)
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleButton.Size = UDim2.new(0, 70, 0, 70) -- Увеличили размер до 70х70
+ToggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+ToggleButton.Image = "rbxassetid://6031068426" -- Иконка шестеренки/меню
+ToggleButton.ImageColor3 = Color3.fromRGB(138, 43, 226)
+
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(1, 0) -- Делаем круглым
+buttonCorner.Parent = ToggleButton
+
+-- Скрипт перетаскивания (Drag and Drop) для круглой кнопки
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    ToggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+ToggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ToggleButton.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+ToggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+
+-- ОСНОВНОЕ ОКНО МЕНЮ (МЕНЬШЕ И КРАСИВЕЕ)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.Position = UDim2.new(0.35, 0, 0.3, 0)
+MainFrame.Size = UDim2.new(0, 420, 0, 260) -- Компактный размер
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.Visible = false
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 14) -- Красивые скругленные углы
+frameCorner.Parent = MainFrame
+
+-- Линия разделения (Красивый градиентный/акцентный вид)
+local SeparatorLine = Instance.new("Frame")
+SeparatorLine.Name = "SeparatorLine"
+SeparatorLine.Parent = MainFrame
+SeparatorLine.Position = UDim2.new(0, 115, 0, 15)
+SeparatorLine.Size = UDim2.new(0, 2, 0, 230)
+SeparatorLine.BackgroundColor3 = Color3.fromRGB(138, 43, 226) -- Фиолетовая линия разделения
+SeparatorLine.BorderSizePixel = 0
+
+-- ВКЛАДКИ (Категории слева)
+local TabsFrame = Instance.new("Frame")
+TabsFrame.Name = "TabsFrame"
+TabsFrame.Parent = MainFrame
+TabsFrame.Position = UDim2.new(0, 5, 0, 15)
+TabsFrame.Size = UDim2.new(0, 105, 0, 230)
+TabsFrame.BackgroundTransparency = 1
+
+local PlayerTabBtn = Instance.new("TextButton")
+PlayerTabBtn.Parent = TabsFrame
+PlayerTabBtn.Size = UDim2.new(1, 0, 0, 40)
+PlayerTabBtn.Position = UDim2.new(0, 0, 0, 10)
+PlayerTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+PlayerTabBtn.Text = "Player"
+PlayerTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerTabBtn.Font = Enum.Font.SourceSansBold
+PlayerTabBtn.TextSize = 16
+Instance.new("UICorner", PlayerTabBtn).CornerRadius = UDim.new(0, 8)
+
+local RenderTabBtn = Instance.new("TextButton")
+RenderTabBtn.Parent = TabsFrame
+RenderTabBtn.Size = UDim2.new(1, 0, 0, 40)
+RenderTabBtn.Position = UDim2.new(0, 0, 0, 60)
+RenderTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+RenderTabBtn.Text = "Render/ESP"
+RenderTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RenderTabBtn.Font = Enum.Font.SourceSansBold
+RenderTabBtn.TextSize = 16
+Instance.new("UICorner", RenderTabBtn).CornerRadius = UDim.new(0, 8)
+
+
+-- КОНТЕНТ ВКЛАДОК
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Parent = MainFrame
+ContentFrame.Position = UDim2.new(0, 130, 0, 15)
+ContentFrame.Size = UDim2.new(0, 275, 0, 230)
+ContentFrame.BackgroundTransparency = 1
+
+-- Вкладка Player (Элементы)
+local PlayerPage = Instance.new("Frame")
+PlayerPage.Parent = ContentFrame
+PlayerPage.Size = UDim2.new(1, 0, 1, 0)
+PlayerPage.BackgroundTransparency = 1
+
+-- Ввод WalkSpeed
+local WSLabel = Instance.new("TextLabel")
+WSLabel.Parent = PlayerPage
+WSLabel.Position = UDim2.new(0, 0, 0, 5)
+WSLabel.Size = UDim2.new(0, 100, 0, 25)
+WSLabel.Text = "WalkSpeed:"
+WSLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+WSLabel.Font = Enum.Font.SourceSans
+WSLabel.TextSize = 16
+WSLabel.TextXAlignment = Enum.TextXAlignment.Left
+WSLabel.BackgroundTransparency = 1
+
+local WSInput = Instance.new("TextBox")
+WSInput.Parent = PlayerPage
+WSInput.Position = UDim2.new(0, 110, 0, 5)
+WSInput.Size = UDim2.new(0, 60, 0, 25)
+WSInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+WSInput.Text = "16"
+WSInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", WSInput).CornerRadius = UDim.new(0, 5)
+
+-- Ввод Jump Boost
+local JBLabel = Instance.new("TextLabel")
+JBLabel.Parent = PlayerPage
+JBLabel.Position = UDim2.new(0, 0, 0, 40)
+JBLabel.Size = UDim2.new(0, 100, 0, 25)
+JBLabel.Text = "Jump Boost:"
+JBLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+JBLabel.Font = Enum.Font.SourceSans
+JBLabel.TextSize = 16
+JBLabel.TextXAlignment = Enum.TextXAlignment.Left
+JBLabel.BackgroundTransparency = 1
+
+local JBInput = Instance.new("TextBox")
+JBInput.Parent = PlayerPage
+JBInput.Position = UDim2.new(0, 110, 0, 40)
+JBInput.Size = UDim2.new(0, 60, 0, 25)
+JBInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+JBInput.Text = "50"
+JBInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", JBInput).CornerRadius = UDim.new(0, 5)
+
+-- Раздел Give Item с Иконками
+local ItemLabel = Instance.new("TextLabel")
+ItemLabel.Parent = PlayerPage
+ItemLabel.Position = UDim2.new(0, 0, 0, 80)
+ItemLabel.Size = UDim2.new(1, 0, 0, 20)
+ItemLabel.Text = "Give Item:"
+ItemLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+ItemLabel.Font = Enum.Font.SourceSansBold
+ItemLabel.TextSize = 15
+ItemLabel.TextXAlignment = Enum.TextXAlignment.Left
+ItemLabel.BackgroundTransparency = 1
+
+-- Кнопка-Иконка Hammer
+local HammerBtn = Instance.new("ImageButton")
+HammerBtn.Parent = PlayerPage
+HammerBtn.Position = UDim2.new(0, 10, 0, 110)
+HammerBtn.Size = UDim2.new(0, 65, 0, 65)
+HammerBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+HammerBtn.Image = "rbxassetid://10839999097" -- ID Иконки Молотка (Замени на актуальный если нужно)
+Instance.new("UICorner", HammerBtn).CornerRadius = UDim.new(0, 10)
+
+-- Кнопка-Иконка Gun
+local GunBtn = Instance.new("ImageButton")
+GunBtn.Parent = PlayerPage
+GunBtn.Position = UDim2.new(0, 95, 0, 110)
+GunBtn.Size = UDim2.new(0, 65, 0, 65)
+GunBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+GunBtn.Image = "rbxassetid://10840001014" -- ID Иконки Пистолета (Замени на актуальный если нужно)
+Instance.new("UICorner", GunBtn).CornerRadius = UDim.new(0, 10)
+
+
+-- Вкладка Render/ESP (Элементы)
+local RenderPage = Instance.new("Frame")
+RenderPage.Parent = ContentFrame
+RenderPage.Size = UDim2.new(1, 0, 1, 0)
+RenderPage.BackgroundTransparency = 1
+RenderPage.Visible = false
+
+local ESPToggle = Instance.new("TextButton")
+ESPToggle.Parent = RenderPage
+ESPToggle.Position = UDim2.new(0, 10, 0, 20)
+ESPToggle.Size = UDim2.new(0, 200, 0, 40)
+ESPToggle.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+ESPToggle.Text = "ESP: OFF"
+ESPToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+ESPToggle.Font = Enum.Font.SourceSansBold
+ESPToggle.TextSize = 18
+Instance.new("UICorner", ESPToggle).CornerRadius = UDim.new(0, 8)
+
+
+-- ЛОГИКА И ФУНКЦИОНАЛ
+
+-- Переключение вкладок
+PlayerTabBtn.MouseButton1Click:Connect(function()
+    PlayerPage.Visible = true
+    RenderPage.Visible = false
+end)
+
+RenderTabBtn.MouseButton1Click:Connect(function()
+    PlayerPage.Visible = false
+    RenderPage.Visible = true
+end)
+
+-- Открытие/Закрытие меню при клике на круглую кнопку
+ToggleButton.MouseButton1Click:Connect(function()
+    if not dragging then -- Открываем только если не перетаскивали
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+-- Валидация и изменение WalkSpeed
+WSInput.FocusLost:Connect(function(enterPressed)
+    local num = tonumber(WSInput.Text)
+    if num then
+        walkSpeedValue = num
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = walkSpeedValue
+        end
+    else
+        WSInput.Text = tostring(walkSpeedValue)
+    end
+end)
+
+-- Валидация и изменение Jump Boost (от 21 до 100)
+JBInput.FocusLost:Connect(function(enterPressed)
+    local num = tonumber(JBInput.Text)
+    if num then
+        if num < 21 then num = 21 end
+        if num > 100 then num = 100 end
+        jumpPowerValue = num
+        JBInput.Text = tostring(jumpPowerValue)
+        
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            hum.JumpPower = jumpPowerValue
+            hum.UseJumpPower = true
+        end
+    else
+        JBInput.Text = tostring(jumpPowerValue)
+    end
+end)
+
+-- Постоянное применение характеристик при респавне
+LocalPlayer.CharacterAdded:Connect(function(char)
+    local hum = char:WaitForChild("Humanoid")
+    task.wait(0.5)
+    hum.WalkSpeed = walkSpeedValue
+    hum.JumpPower = jumpPowerValue
+    hum.UseJumpPower = true
+end)
+
+-- Логика выдачи предметов (Hammer / Gun)
+local function giveItem(itemName)
+    -- Ищет предмет в модулях игры или ящиках карты Piggy (базовый триггер)
+    local tools = game:GetService("ReplicatedStorage"):FindFirstChild("Tools") or game:GetService("Storage")
+    local item = tools and tools:FindFirstChild(itemName)
+    
+    if item then
+        local clone = item:Clone()
+        clone.Parent = LocalPlayer.Backpack
+    else
+        -- Альтернативный поиск по всей игре, если папка скрыта
+        for _, obj in pairs(game:GetDescendants()) do
+            if obj:IsA("Tool") and obj.Name:lower() == itemName:lower() then
+                local clone = obj:Clone()
+                clone.Parent = LocalPlayer.Backpack
+                break
+            end
+        end
+    end
+end
+
+HammerBtn.MouseButton1Click:Connect(function()
+    giveItem("Hammer")
+end)
+
+GunBtn.MouseButton1Click:Connect(function()
+    giveItem("Gun")
+end)
+
+-- Логика переключения ESP (Фиолетовые Chams)
+ESPToggle.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    if espEnabled then
+        ESPToggle.Text = "ESP: ON"
+        ESPToggle.BackgroundColor3 = Color3.fromRGB(138, 43, 226) -- Фиолетовая кнопка активна
+        for _, player in pairs(Players:GetPlayers()) do
+            checkAndApplyESP(player)
+        end
+    else
+        ESPToggle.Text = "ESP: OFF"
+        ESPToggle.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+        removeESP()
+    end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+    if espEnabled then
+        checkAndApplyESP(player)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    -- Очистка
+end)
