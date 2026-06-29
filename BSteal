@@ -1,0 +1,394 @@
+-- GothbreachHelper FULL FIX
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+if not LocalPlayer then
+    warn("Ждём игрока...")
+    repeat wait() until Players.LocalPlayer
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- Переменные функций
+local espEnabled = false
+local espLockEnabled = false
+local espHeightEnabled = false
+local infinityJump = false
+local jumpBoost = false
+local speedBoost = false
+local autoWeb = false
+local autoGrab = false
+local jumpPower = 50
+local walkSpeed = 20
+
+-- === GUI ===
+local gui = Instance.new("ScreenGui")
+gui.Name = "GothMenu"
+gui.ResetOnSpawn = false
+-- Пытаемся прикрепить
+pcall(function()
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end)
+if not gui.Parent then
+    gui.Parent = game:GetService("CoreGui")
+end
+
+-- Пиксельный шрифт (Legacy)
+local function makeLabel(text, parent, size, pos, color)
+    local l = Instance.new("TextLabel", parent)
+    l.Size = size or UDim2.new(0, 100, 0, 20)
+    l.Position = pos or UDim2.new(0,0,0,0)
+    l.BackgroundTransparency = 1
+    l.Text = text or ""
+    l.TextColor3 = color or Color3.fromRGB(255,255,255)
+    l.Font = Enum.Font.Legacy
+    l.TextScaled = true
+    return l
+end
+
+-- === КРУГЛАЯ ИКОНКА ===
+local icon = Instance.new("ImageButton")
+icon.Size = UDim2.new(0, 60, 0, 60)
+icon.Position = UDim2.new(0, 20, 0, 100)
+icon.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+icon.BackgroundTransparency = 0.2
+icon.BorderSizePixel = 0
+icon.Image = "rbxassetid://6031090938" -- шестерня
+icon.ImageColor3 = Color3.fromRGB(255,255,255)
+icon.Parent = gui
+
+local corner = Instance.new("UICorner", icon)
+corner.CornerRadius = UDim.new(1, 0)
+
+-- Перетаскивание
+local dragging = false
+local dragStart, startPos
+
+icon.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = icon.Position
+    end
+end)
+
+icon.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        icon.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- === МЕНЮ (горизонтальное) ===
+local menuOpen = false
+local menuFrame = Instance.new("Frame")
+menuFrame.Size = UDim2.new(0, 700, 0, 400)
+menuFrame.Position = UDim2.new(0.5, -350, 0.5, -200)
+menuFrame.BackgroundColor3 = Color3.fromRGB(20,20,30)
+menuFrame.BackgroundTransparency = 0.15
+menuFrame.BorderSizePixel = 0
+menuFrame.Visible = false
+menuFrame.Parent = gui
+
+local menuCorner = Instance.new("UICorner", menuFrame)
+menuCorner.CornerRadius = UDim.new(0, 10)
+
+-- Заголовок
+local title = makeLabel("Gothbreach Panel", menuFrame, UDim2.new(1,0,0,30), UDim2.new(0,0,0,0), Color3.fromRGB(200,200,255))
+title.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Вкладки
+local tabContainer = Instance.new("Frame", menuFrame)
+tabContainer.Size = UDim2.new(1, -20, 0, 30)
+tabContainer.Position = UDim2.new(0, 10, 0, 35)
+tabContainer.BackgroundTransparency = 1
+
+local function makeTab(text, xPos)
+    local btn = Instance.new("TextButton", tabContainer)
+    btn.Size = UDim2.new(0, 100, 1, 0)
+    btn.Position = UDim2.new(0, xPos, 0, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(50,50,70)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Font = Enum.Font.Legacy
+    btn.TextScaled = true
+    local c = Instance.new("UICorner", btn)
+    c.CornerRadius = UDim.new(0, 5)
+    return btn
+end
+
+local tabESP = makeTab("ESP", 0)
+local tabPLAYER = makeTab("PLAYER", 110)
+local tabAUTO = makeTab("AUTO", 220)
+
+-- Контент
+local contentArea = Instance.new("Frame", menuFrame)
+contentArea.Size = UDim2.new(1, -20, 1, -80)
+contentArea.Position = UDim2.new(0, 10, 0, 70)
+contentArea.BackgroundTransparency = 1
+contentArea.ClipsDescendants = true
+
+-- Функция создания тогла с состоянием
+local function makeToggle(parent, text, yPos, default)
+    local frame = Instance.new("Frame", parent)
+    frame.Size = UDim2.new(1, 0, 0, 35)
+    frame.Position = UDim2.new(0, 0, 0, yPos)
+    frame.BackgroundTransparency = 1
+
+    local label = makeLabel(text, frame, UDim2.new(0.7,0,1,0), UDim2.new(0,0,0,0), Color3.fromRGB(220,220,255))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local btn = Instance.new("TextButton", frame)
+    btn.Size = UDim2.new(0, 80, 1, -6)
+    btn.Position = UDim2.new(0.7, 0, 0, 3)
+    btn.BackgroundColor3 = default and Color3.fromRGB(0,200,0) or Color3.fromRGB(100,100,100)
+    btn.Text = default and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Font = Enum.Font.Legacy
+    btn.TextScaled = true
+    local c = Instance.new("UICorner", btn)
+    c.CornerRadius = UDim.new(0, 4)
+
+    local state = default or false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.BackgroundColor3 = state and Color3.fromRGB(0,200,0) or Color3.fromRGB(100,100,100)
+        btn.Text = state and "ON" or "OFF"
+    end)
+    return btn, function() return state end
+end
+
+-- ESP вкладка
+local espFrame = Instance.new("Frame", contentArea)
+espFrame.Size = UDim2.new(1,0,1,0)
+espFrame.BackgroundTransparency = 1
+espFrame.Visible = true
+
+local espToggle, getEsp = makeToggle(espFrame, "ESP PLAYER (хитбокс синий)", 0, false)
+local lockToggle, getLock = makeToggle(espFrame, "ESP LOCK (таймер базы)", 40, false)
+local heightToggle, getHeight = makeToggle(espFrame, "ESP HEIGHT BRAINROT (доход/сек)", 80, false)
+
+-- PLAYER вкладка
+local playerFrame = Instance.new("Frame", contentArea)
+playerFrame.Size = UDim2.new(1,0,1,0)
+playerFrame.BackgroundTransparency = 1
+playerFrame.Visible = false
+
+local infJumpToggle, getInfJump = makeToggle(playerFrame, "INFINITY JUMP", 0, false)
+local jumpBoostToggle, getJumpBoost = makeToggle(playerFrame, "JUMP BOOST", 40, false)
+
+local jumpInput = Instance.new("TextBox", playerFrame)
+jumpInput.Size = UDim2.new(0.5,0,0,30)
+jumpInput.Position = UDim2.new(0.5,10,0,44)
+jumpInput.BackgroundColor3 = Color3.fromRGB(40,40,60)
+jumpInput.TextColor3 = Color3.fromRGB(255,255,255)
+jumpInput.Text = "50"
+jumpInput.Font = Enum.Font.Legacy
+jumpInput.TextScaled = true
+jumpInput.PlaceholderText = "21-100"
+local jc = Instance.new("UICorner", jumpInput)
+jc.CornerRadius = UDim.new(0,4)
+jumpInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local v = tonumber(jumpInput.Text)
+    if v then jumpPower = math.clamp(v,21,100) end
+end)
+
+local speedBoostToggle, getSpeedBoost = makeToggle(playerFrame, "SPEEDBOOST", 80, false)
+local speedInput = Instance.new("TextBox", playerFrame)
+speedInput.Size = UDim2.new(0.5,0,0,30)
+speedInput.Position = UDim2.new(0.5,10,0,124)
+speedInput.BackgroundColor3 = Color3.fromRGB(40,40,60)
+speedInput.TextColor3 = Color3.fromRGB(255,255,255)
+speedInput.Text = "20"
+speedInput.Font = Enum.Font.Legacy
+speedInput.TextScaled = true
+speedInput.PlaceholderText = "16-300"
+local sc = Instance.new("UICorner", speedInput)
+sc.CornerRadius = UDim.new(0,4)
+speedInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local v = tonumber(speedInput.Text)
+    if v then walkSpeed = math.clamp(v,16,300) end
+end)
+
+-- AUTO вкладка
+local autoFrame = Instance.new("Frame", contentArea)
+autoFrame.Size = UDim2.new(1,0,1,0)
+autoFrame.BackgroundTransparency = 1
+autoFrame.Visible = false
+
+local webToggle, getWeb = makeToggle(autoFrame, "AUTOWEB (Web Slinger)", 0, false)
+local grabToggle, getGrab = makeToggle(autoFrame, "AUTOGRAB (зажим E)", 40, false)
+
+-- Переключение вкладок
+tabESP.MouseButton1Click:Connect(function()
+    espFrame.Visible = true
+    playerFrame.Visible = false
+    autoFrame.Visible = false
+end)
+tabPLAYER.MouseButton1Click:Connect(function()
+    espFrame.Visible = false
+    playerFrame.Visible = true
+    autoFrame.Visible = false
+end)
+tabAUTO.MouseButton1Click:Connect(function()
+    espFrame.Visible = false
+    playerFrame.Visible = false
+    autoFrame.Visible = true
+end)
+
+-- Открытие меню
+icon.MouseButton1Click:Connect(function()
+    menuOpen = not menuOpen
+    menuFrame.Visible = menuOpen
+end)
+
+-- === ФУНКЦИОНАЛ (без Debris, прямое удаление) ===
+local espObjects = {}
+local lockObjects = {}
+local heightObjects = {}
+
+RunService.RenderStepped:Connect(function()
+    -- Очистка старых ESP
+    for _, v in ipairs(espObjects) do v:Destroy() end
+    espObjects = {}
+    for _, v in ipairs(lockObjects) do v:Destroy() end
+    lockObjects = {}
+    for _, v in ipairs(heightObjects) do v:Destroy() end
+    heightObjects = {}
+
+    -- ESP PLAYER
+    if getEsp() then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local box = Instance.new("BoxHandleAdornment")
+                box.Size = Vector3.new(3,5,1.5)
+                box.Adornee = plr.Character.HumanoidRootPart
+                box.Color3 = Color3.fromRGB(0,0,255)
+                box.Transparency = 0.5
+                box.ZIndex = 0
+                box.Parent = plr.Character
+                table.insert(espObjects, box)
+            end
+        end
+    end
+
+    -- ESP LOCK
+    if getLock() then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local bill = Instance.new("BillboardGui")
+                bill.Size = UDim2.new(0,100,0,30)
+                bill.Adornee = plr.Character.HumanoidRootPart
+                bill.AlwaysOnTop = true
+                local lbl = Instance.new("TextLabel", bill)
+                lbl.Size = UDim2.new(1,0,1,0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = "⏳ " .. math.floor(os.time()%60) .. "s"
+                lbl.TextColor3 = Color3.fromRGB(255,200,0)
+                lbl.Font = Enum.Font.Legacy
+                lbl.TextScaled = true
+                bill.Parent = plr.Character
+                table.insert(lockObjects, bill)
+            end
+        end
+    end
+
+    -- ESP HEIGHT BRAINROT
+    if getHeight() then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and string.find(obj.Name, "Brainrot") then
+                local box = Instance.new("BoxHandleAdornment")
+                box.Size = obj.Size
+                box.Adornee = obj
+                box.Color3 = Color3.fromRGB(255,0,200)
+                box.Transparency = 0.3
+                box.Parent = obj
+                table.insert(heightObjects, box)
+                
+                local bill = Instance.new("BillboardGui")
+                bill.Size = UDim2.new(0,150,0,40)
+                bill.Adornee = obj
+                bill.AlwaysOnTop = true
+                local lbl = Instance.new("TextLabel", bill)
+                lbl.Size = UDim2.new(1,0,1,0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = obj.Name .. "\n+5.2/s"
+                lbl.TextColor3 = Color3.fromRGB(0,255,150)
+                lbl.Font = Enum.Font.Legacy
+                lbl.TextScaled = true
+                bill.Parent = obj
+                table.insert(heightObjects, bill)
+            end
+        end
+    end
+
+    -- INFINITY JUMP
+    if getInfJump() then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            char.Humanoid.JumpPower = 50
+        end
+    end
+
+    -- JUMP BOOST
+    if getJumpBoost() then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.JumpPower = jumpPower
+        end
+    end
+
+    -- SPEEDBOOST
+    if getSpeedBoost() then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = walkSpeed
+        end
+    end
+
+    -- AUTOWEB
+    if getWeb() then
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if tool and tool.Name == "Web Slinger" then
+            local nearest = nil
+            local minDist = math.huge
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (plr.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        nearest = plr.Character.HumanoidRootPart
+                    end
+                end
+            end
+            if nearest then
+                tool:Activate()
+                tool.Handle.CFrame = CFrame.new(tool.Handle.Position, nearest.Position)
+            end
+        end
+    end
+end)
+
+-- AUTOGRAB (зажим E)
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.E and getGrab() then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and string.find(obj.Name, "Brainrot") and (obj.Position - char.HumanoidRootPart.Position).Magnitude < 10 then
+                    obj:Destroy()
+                end
+            end
+        end
+    end
+end)
+
+print("GothbreachHelper FIXED. Иконка должна появиться.")
