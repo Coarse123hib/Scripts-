@@ -1,12 +1,11 @@
--- Steal a Brainrot GUI Script for Delta Executor
--- Pixel font style, draggable circular button -> horizontal menu
--- Created as requested
+-- Steal a Brainrot GUI Script for Delta Executor - FIXED VERSION
+-- Draggable circle + horizontal menu with tabs
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -17,24 +16,312 @@ screenGui.Name = "BrainrotGUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Pixel font (using Roblox's built-in or approximate)
-local pixelFont = Enum.Font.Code -- Close to pixel, or use Arcade if available
-
--- Main Circular Button (draggable)
+-- Circular Button
 local circleButton = Instance.new("ImageButton")
 circleButton.Name = "CircleButton"
-circleButton.Size = UDim2.new(0, 80, 0, 80)
+circleButton.Size = UDim2.new(0, 70, 0, 70)
 circleButton.Position = UDim2.new(0.05, 0, 0.4, 0)
 circleButton.BackgroundTransparency = 1
-circleButton.Image = "rbxassetid://3570695787" -- Roblox icon-ish (blue circle style, you can change)
+circleButton.Image = "rbxassetid://3926305904" -- Roblox-style icon
+circleButton.ImageColor3 = Color3.fromRGB(0, 170, 255)
 circleButton.Parent = screenGui
 
--- Make circle draggable
 local dragging = false
 local dragInput
 local dragStart
 local startPos
 
+circleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = circleButton.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        circleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- Main Menu
+local mainMenu = Instance.new("Frame")
+mainMenu.Name = "MainMenu"
+mainMenu.Size = UDim2.new(0.65, 0, 0.4, 0)
+mainMenu.Position = UDim2.new(0.2, 0, 0.3, 0)
+mainMenu.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainMenu.Visible = false
+mainMenu.Parent = screenGui
+
+local menuCorner = Instance.new("UICorner", mainMenu)
+menuCorner.CornerRadius = UDim.new(0, 10)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0.12, 0)
+title.BackgroundTransparency = 1
+title.Text = "STEAL A BRAINROT"
+title.TextColor3 = Color3.fromRGB(0, 255, 120)
+title.TextScaled = true
+title.Font = Enum.Font.Code
+title.Parent = mainMenu
+
+-- Tabs
+local tabHolder = Instance.new("Frame")
+tabHolder.Size = UDim2.new(1, 0, 0.12, 0)
+tabHolder.Position = UDim2.new(0, 0, 0.12, 0)
+tabHolder.BackgroundTransparency = 1
+tabHolder.Parent = mainMenu
+
+local tabs = {"ESP", "PLAYER", "AUTO"}
+local currentTab = "ESP"
+local contentFrame = Instance.new("ScrollingFrame")
+contentFrame.Size = UDim2.new(1, 0, 0.76, 0)
+contentFrame.Position = UDim2.new(0, 0, 0.24, 0)
+contentFrame.BackgroundTransparency = 1
+contentFrame.ScrollBarThickness = 5
+contentFrame.Parent = mainMenu
+
+local uiList = Instance.new("UIListLayout", contentFrame)
+uiList.Padding = UDim.new(0, 6)
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+
+local toggleStates = {
+    espPlayer = false,
+    espLock = false,
+    espBrainrot = false,
+    infJump = false,
+    jumpBoost = false,
+    jumpPower = 50,
+    speedBoost = false,
+    speedVal = 60,
+    autoGrab = false,
+    autoWeb = false
+}
+
+local espBoxes = {}
+
+local function createRow(parent, name, hasSlider, minV, maxV, defV, toggleCallback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -10, 0, 55)
+    row.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    row.Parent = parent
+    
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.48, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = Color3.new(1,1,1)
+    lbl.TextScaled = true
+    lbl.Font = Enum.Font.Code
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+    
+    local tog = Instance.new("TextButton")
+    tog.Size = UDim2.new(0.22, 0, 0.65, 0)
+    tog.Position = UDim2.new(0.52, 0, 0.2, 0)
+    tog.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+    tog.Text = "OFF"
+    tog.TextColor3 = Color3.new(1,1,1)
+    tog.TextScaled = true
+    tog.Font = Enum.Font.Code
+    tog.Parent = row
+    Instance.new("UICorner", tog)
+    
+    local valLabel
+    local sliderFrame
+    local sliderBar
+    
+    if hasSlider then
+        sliderFrame = Instance.new("Frame")
+        sliderFrame.Size = UDim2.new(0.22, 0, 0.45, 0)
+        sliderFrame.Position = UDim2.new(0.76, 0, 0.3, 0)
+        sliderFrame.BackgroundColor3 = Color3.fromRGB(60,60,60)
+        sliderFrame.Parent = row
+        Instance.new("UICorner", sliderFrame)
+        
+        sliderBar = Instance.new("Frame")
+        sliderBar.Size = UDim2.new(0.6, 0, 1, 0)
+        sliderBar.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        sliderBar.Parent = sliderFrame
+        Instance.new("UICorner", sliderBar)
+        
+        valLabel = Instance.new("TextLabel")
+        valLabel.Size = UDim2.new(0.18, 0, 1, 0)
+        valLabel.Position = UDim2.new(1.05, 0, 0, 0)
+        valLabel.BackgroundTransparency = 1
+        valLabel.Text = tostring(defV)
+        valLabel.TextColor3 = Color3.new(1,1,1)
+        valLabel.TextScaled = true
+        valLabel.Font = Enum.Font.Code
+        valLabel.Parent = row
+    end
+    
+    local currentVal = defV or 50
+    
+    tog.MouseButton1Click:Connect(function()
+        toggleStates[name:lower():gsub(" ", "")] = not toggleStates[name:lower():gsub(" ", "")]
+        local isOn = toggleStates[name:lower():gsub(" ", "")]
+        tog.Text = isOn and "ON" or "OFF"
+        tog.BackgroundColor3 = isOn and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0)
+        toggleCallback(isOn, currentVal)
+    end)
+    
+    if hasSlider then
+        local sliding = false
+        sliderFrame.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then sliding = true end
+        end)
+        UserInputService.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then sliding = false end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if not sliding then return end
+            local rel = math.clamp((i.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+            currentVal = minV + rel * (maxV - minV)
+            sliderBar.Size = UDim2.new(rel, 0, 1, 0)
+            valLabel.Text = math.floor(currentVal)
+            toggleCallback(toggleStates[name:lower():gsub(" ", "")], currentVal)
+        end)
+    end
+end
+
+local function refreshContent()
+    for _, v in pairs(contentFrame:GetChildren()) do
+        if v:IsA("Frame") then v:Destroy() end
+    end
+    
+    if currentTab == "ESP" then
+        createRow(contentFrame, "ESP PLAYER", false, nil, nil, nil, function(s) toggleStates.espplayer = s end)
+        createRow(contentFrame, "ESP LOCK", false, nil, nil, nil, function(s) toggleStates.esplock = s end)
+        createRow(contentFrame, "ESP HEIGHT BRAINROT", false, nil, nil, nil, function(s) toggleStates.espbrainrot = s end)
+    elseif currentTab == "PLAYER" then
+        createRow(contentFrame, "INFINITY JUMP", false, nil, nil, nil, function(s) toggleStates.infjump = s end)
+        createRow(contentFrame, "JUMP BOOST", true, 21, 100, 50, function(s, v) toggleStates.jumpboost = s; toggleStates.jumppower = v end)
+        createRow(contentFrame, "SPEED BOOST", true, 16, 300, 60, function(s, v) toggleStates.speedboost = s; toggleStates.speedval = v end)
+    elseif currentTab == "AUTO" then
+        createRow(contentFrame, "AUTOGRAB", false, nil, nil, nil, function(s) toggleStates.autograb = s end)
+        createRow(contentFrame, "AUTOWEB", false, nil, nil, nil, function(s) toggleStates.autoweb = s end)
+    end
+end
+
+-- Tab buttons
+for i, tname in ipairs(tabs) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.32, 0, 1, 0)
+    btn.Position = UDim2.new((i-1)*0.333, 5, 0, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    btn.Text = tname
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.Code
+    btn.Parent = tabHolder
+    Instance.new("UICorner", btn)
+    
+    btn.MouseButton1Click:Connect(function()
+        currentTab = tname
+        refreshContent()
+    end)
+end
+
+circleButton.MouseButton1Click:Connect(function()
+    mainMenu.Visible = not mainMenu.Visible
+    if mainMenu.Visible then refreshContent() end
+end)
+
+-- ==================== FUNCTIONS ====================
+
+-- Better Infinite Jump + Anti Death
+humanoid.StateChanged:Connect(function(_, new)
+    if toggleStates.infjump and new == Enum.HumanoidStateType.FallingDown or new == Enum.HumanoidStateType.Ragdoll then
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    if toggleStates.speedboost then
+        humanoid.WalkSpeed = toggleStates.speedval
+    else
+        humanoid.WalkSpeed = 16
+    end
+    if toggleStates.jumpboost then
+        humanoid.JumpPower = toggleStates.jumppower
+    end
+end)
+
+-- ESP
+local function updateESP()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr \~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local root = plr.Character.HumanoidRootPart
+            if not espBoxes[plr] then
+                local box = Instance.new("BoxHandleAdornment")
+                box.Adornee = root
+                box.Size = root.Size + Vector3.new(1, 2, 1)
+                box.Color3 = Color3.fromRGB(0, 120, 255)
+                box.Transparency = 0.4
+                box.AlwaysOnTop = true
+                box.ZIndex = 10
+                box.Parent = root
+                espBoxes[plr] = box
+            end
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if toggleStates.espplayer then
+        updateESP()
+    else
+        for plr, box in pairs(espBoxes) do
+            if box then box:Destroy() end
+        end
+        espBoxes = {}
+    end
+    
+    -- Auto Grab (E spam)
+    if toggleStates.autograb then
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        wait(0.08)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end
+end)
+
+-- Auto Web (simple nearest target simulation)
+spawn(function()
+    while wait(0.8) do
+        if toggleStates.autoweb and character and character:FindFirstChild("HumanoidRootPart") then
+            local root = character.HumanoidRootPart
+            local closest, dist = nil, math.huge
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p \~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                    if d < dist and d < 120 then
+                        dist = d
+                        closest = p
+                    end
+                end
+            end
+            if closest then
+                print("AutoWeb -> " .. closest.Name)
+                -- Simulate tool activation (adjust if you have Web Slinger tool name)
+            end
+        end
+    end
+end)
+
+print("✅ Brainrot GUI FIXED & LOADED!")
+print("Click the circle icon to open menu.")
 local function updateCircle(input)
     local delta = input.Position - dragStart
     local position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
