@@ -1,0 +1,417 @@
+-- узел: meridian/roblox_delta_executor
+-- deps: Delta Injector Core API, Roblox RunService, VirtualInputManager
+-- параметры: UI_FONT (Enum.Font.Code), ACCENT_COLOR (Color3.fromRGB(0, 170, 255))
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- // ХРАНИЛИЩЕ СОСТОЯНИЙ СОФТА
+local State = {
+    ESP_Player = false,
+    ESP_Lock = false,
+    ESP_Height_Brainrot = false,
+    InfJump = false,
+    JumpBoost = false,
+    JumpValue = 50,
+    SpeedBoost = false,
+    SpeedValue = 16,
+    AutoWeb = false,
+    AutoGrab = false,
+    ActiveTab = "ESP"
+}
+
+-- // СОЗДАНИЕ ИНТЕРФЕЙСА (ПИКСЕЛЬНЫЙ СТИЛЬ)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Morn_Terminal_UI"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+-- Радиальная кнопка (Передвижная)
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Name = "CoreToggle"
+ToggleButton.Size = UDim2.new(0, 50, 0, 50)
+ToggleButton.Position = UDim2.new(0.1, 0, 0.1, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ToggleButton.Image = "rbxassetid://10747373139" -- Иконка шестерни/ядра
+ToggleButton.ImageColor3 = Color3.fromRGB(0, 170, 255)
+ToggleButton.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(1, 0)
+Corner.Parent = ToggleButton
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(0, 170, 255)
+UIStroke.Thickness = 2
+UIStroke.Parent = ToggleButton
+
+-- Логика Drag-and-Drop для кнопки
+local dragging, dragInput, dragStart, startPos
+ToggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ToggleButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+ToggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        ToggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Главное меню (Горизонтальное)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainTerminal"
+MainFrame.Size = UDim2.new(0, 550, 0, 280)
+MainFrame.Position = UDim2.new(0.3, 0, 0.3, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Color3.fromRGB(40, 40, 40)
+MainStroke.Thickness = 1
+MainStroke.Parent = MainFrame
+
+-- Навигация (Слева)
+local NavFrame = Instance.new("Frame")
+NavFrame.Size = UDim2.new(0, 120, 1, 0)
+NavFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+NavFrame.Parent = MainFrame
+
+local NavLayout = Instance.new("UIListLayout")
+NavLayout.Parent = NavFrame
+NavLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Контейнер для контента (Справа)
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, -120, 1, 0)
+ContentFrame.Position = UDim2.new(0, 120, 0, 0)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+-- Переключение видимости меню
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ UI
+local function CreateTabButton(name)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, 0, 0, 40)
+    Btn.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    Btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    Btn.Text = " " .. name
+    Btn.Font = Enum.Font.Code
+    Btn.TextSize = 14
+    Btn.TextXAlignment = Enum.TextXAlignment.Left
+    Btn.Parent = NavFrame
+    
+    Btn.MouseButton1Click:Connect(function()
+        State.ActiveTab = name
+        for _, child in pairs(ContentFrame:GetChildren()) do
+            if child:IsA("ScrollingFrame") then child.Visible = (child.Name == name) end
+        end
+        for _, b in pairs(NavFrame:GetChildren()) do
+            if b:IsA("TextButton") then b.TextColor3 = Color3.fromRGB(150, 150, 150) end
+        end
+        Btn.TextColor3 = Color3.fromRGB(0, 170, 255)
+    end)
+end
+
+local Tabs = {}
+local function GetTabContainer(name)
+    if Tabs[name] then return Tabs[name] end
+    local Scroller = Instance.new("ScrollingFrame")
+    Scroller.Name = name
+    Scroller.Size = UDim2.new(1, 0, 1, 0)
+    Scroller.BackgroundTransparency = 1
+    Scroller.CanvasSize = UDim2.new(0, 0, 2, 0)
+    Scroller.Visible = false
+    Scroller.Parent = ContentFrame
+    
+    local Layout = Instance.new("UIListLayout")
+    Layout.Padding = UDim.new(0, 8)
+    Layout.Parent = Scroller
+    
+    local Padding = Instance.new("UIPadding")
+    Padding.PaddingTop = UDim.new(0, 10)
+    Padding.PaddingLeft = UDim.new(0, 10)
+    Padding.Parent = Scroller
+    
+    Tabs[name] = Scroller
+    CreateTabButton(name)
+    return Scroller
+end
+
+-- Переключатель (Ползунок/Тоггл)
+local function AddToggle(tabName, text, stateKey, callback)
+    local container = GetTabContainer(tabName)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0.95, 0, 0, 35)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = container
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.Font = Enum.Font.Code
+    Label.TextColor3 = Color3.fromRGB(230, 230, 230)
+    Label.TextSize = 14
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Frame
+    
+    local SliderBg = Instance.new("TextButton")
+    SliderBg.Size = UDim2.new(0, 45, 0, 20)
+    SliderBg.Position = UDim2.new(0.8, 0, 0.2, 0)
+    SliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    SliderBg.Text = ""
+    SliderBg.Parent = Frame
+    
+    local SliderBtn = Instance.new("Frame")
+    SliderBtn.Size = UDim2.new(0, 16, 0, 16)
+    SliderBtn.Position = UDim2.new(0, 2, 0, 2)
+    SliderBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    SliderBtn.Parent = SliderBg
+    
+    local function updateVisual(val)
+        if val then
+            TweenService:Create(SliderBtn, TweenInfo.new(0.1), {Position = UDim2.new(0, 27, 0, 2), BackgroundColor3 = Color3.fromRGB(0, 170, 255)}):Play()
+        else
+            TweenService:Create(SliderBtn, TweenInfo.new(0.1), {Position = UDim2.new(0, 2, 0, 2), BackgroundColor3 = Color3.fromRGB(100, 100, 100)}):Play()
+        end
+    end
+    
+    SliderBg.MouseButton1Click:Connect(function()
+        State[stateKey] = not State[stateKey]
+        updateVisual(State[stateKey])
+        if callback then callback(State[stateKey]) end
+    end)
+end
+
+-- Поле ввода численных значений
+local function AddTextBox(tabName, text, min, max, stateKey, callback)
+    local container = GetTabContainer(tabName)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0.95, 0, 0, 35)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = container
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text .. " (" .. tostring(State[stateKey]) .. ")"
+    Label.Font = Enum.Font.Code
+    Label.TextColor3 = Color3.fromRGB(180, 180, 180)
+    Label.TextSize = 13
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Frame
+    
+    local Input = Instance.new("TextBox")
+    Input.Size = UDim2.new(0, 50, 0, 22)
+    Input.Position = UDim2.new(0.8, 0, 0.2, 0)
+    Input.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    Input.TextColor3 = Color3.fromRGB(0, 170, 255)
+    Input.Font = Enum.Font.Code
+    Input.TextSize = 13
+    Input.Text = tostring(State[stateKey])
+    Input.Parent = Frame
+    
+    Input.FocusLost:Connect(function(enterPressed)
+        local num = tonumber(Input.Text)
+        if num then
+            num = math.clamp(num, min, max)
+            State[stateKey] = num
+            Input.Text = tostring(num)
+            Label.Text = text .. " (" .. tostring(num) .. ")"
+            if callback then callback(num) end
+        else
+            Input.Text = tostring(State[stateKey])
+        end
+    end)
+end
+
+-- // ИНИЦИАЛИЗАЦИЯ ВКЛАДОК И ФУНКЦИЙ
+-- Вкладка ESP
+AddToggle("ESP", "ESP PLAYER (Hitbox)", "ESP_Player")
+AddToggle("ESP", "ESP LOCK (Base Timer)", "ESP_Lock")
+AddToggle("ESP", "ESP HEIGHT BRAINROT", "ESP_Height_Brainrot")
+
+-- Вкладка PLAYER
+AddToggle("PLAYER", "SPEEDBOOST", "SpeedBoost", function(v)
+    if not v and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+    end
+end)
+AddTextBox("PLAYER", " -> Скорость [16-300]", 16, 300, "SpeedValue")
+
+AddToggle("PLAYER", "JUMP BOOST", "JumpBoost")
+AddTextBox("PLAYER", " -> Прыжок [21-100]", 21, 100, "JumpValue")
+AddToggle("PLAYER", "INFINITY JUMP", "InfJump")
+
+-- Вкладка AUTO
+AddToggle("AUTO", "AUTOGRAB (Зажим E)", "AutoGrab")
+AddToggle("AUTO", "AUTOWEB (No Slider)", "AutoWeb")
+
+-- Активация первой вкладки по умолчанию
+Tabs["ESP"].Visible = true
+
+-- // ЛОГИКА ОРБИТАЛЬНЫХ МОДУЛЕЙ И ХАКОВ
+
+-- Модуль: Движение (Speed & Jump)
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if State.SpeedBoost then
+                hum.WalkSpeed = State.SpeedValue
+            end
+            if State.JumpBoost then
+                if hum.UseJumpPower then
+                    hum.JumpPower = State.JumpValue
+                else
+                    hum.JumpHeight = State.JumpValue
+                end
+            end
+        end
+    end
+end)
+
+-- Модуль: Бесконечный прыжок (Безопасный триггер через состояние)
+UserInputService.JumpRequest:Connect(function()
+    if State.InfJump then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end
+end)
+
+-- Модули ESP и Рендеринга
+local PlayerBoxes = {}
+local BaseLabels = {}
+local BrainrotHighlight = nil
+
+local function ApplyHighlight(part, color)
+    local box = part:FindFirstChild("MornBox") or Instance.new("BoxHandleAdornment")
+    box.Name = "MornBox"
+    box.Size = part.Size + Vector3.new(0.1, 0.1, 0.1)
+    box.AlwaysOnTop = true
+    box.ZIndex = 5
+    box.Color3 = color
+    box.Adornment = part
+    box.Transparency = 0.6
+    box.Parent = part
+    return box
+end
+
+local function CreateBillboard(parent, text, offset)
+    local bboard = parent:FindFirstChild("MornLabel") or Instance.new("BillboardGui")
+    bboard.Name = "MornLabel"
+    bboard.Size = UDim2.new(0, 200, 0, 50)
+    bboard.AlwaysOnTop = true
+    bboard.StudsOffset = offset or Vector3.new(0, 3, 0)
+    
+    local lbl = bboard:FindFirstChild("Text") or Instance.new("TextLabel")
+    lbl.Name = "Text"
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = Color3.fromRGB(0, 170, 255)
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 14
+    lbl.Text = text
+    lbl.Parent = bboard
+    
+    bboard.Parent = parent
+    return lbl
+end
+
+RunService.RenderStepped:Connect(function()
+    -- 1. ESP PLAYER
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = p.Character.HumanoidRootPart
+            if State.ESP_Player then
+                ApplyHighlight(hrp, Color3.fromRGB(0, 170, 255))
+            else
+                if hrp:FindFirstChild("MornBox") then hrp.MornBox:Destroy() end
+            end
+        end
+    end
+
+    -- 2. ESP LOCK (Таймер баз игроков)
+    -- Карта парсит папки баз. В "Steal a brainrot" это обычно workspace.Tycoons или workspace.Bases
+    local bases = workspace:FindFirstChild("Tycoons") or workspace:FindFirstChild("Bases")
+    if State.ESP_Lock and bases then
+        for _, base in pairs(bases:GetChildren()) do
+            local timerVal = base:FindFirstChild("Timer") or base:FindFirstChild("TimeLeft") or base:FindFirstChild("Seconds")
+            local plotPart = base:FindFirstChild("MainPart") or base:FindFirstChild("Entrance") or base.PrimaryPart
+            if timerVal and plotPart then
+                local s = tostring(timerVal.Value)
+                local lbl = CreateBillboard(plotPart, "БАЗА: " .. s .. "s")
+                lbl.TextColor3 = Color3.fromRGB(255, 85, 85)
+            end
+        end
+    else
+        -- Очистка меток баз при выключении
+        if bases then
+            for _, base in pairs(bases:GetChildren()) do
+                for _, child in pairs(base:GetChildren()) do
+                    if child:FindFirstChild("MornLabel") then child.MornLabel:Destroy() end
+                end
+            end
+        end
+    end
+
+    -- 3. ESP HEIGHT BRAINROT (Поиск самого дорогого объекта на сервере)
+    if State.ESP_Height_Brainrot then
+        local highestIncome = -1
+        local targetItem = nil
+        local itemsFolder = workspace:FindFirstChild("Drops") or workspace:FindFirstChild("Brainrots") or workspace
+        
+        for _, obj in pairs(itemsFolder:GetChildren()) do
+            -- Определение параметров дохода из метаданных объекта
+            local incomeValue = obj:FindFirstChild("Income") or obj:FindFirstChild("Value") or obj:FindFirstChild("ValuePerSecond")
+            if incomeValue and incomeValue:IsA("ValueBase") then
+                if incomeValue.Value > highestIncome then
+                    highestIncome = incomeValue.Value
+                    targetItem = obj
+                end
+            end
+        end
+        
+        if targetItem and targetItem:IsA("BasePart") then
+            ApplyHighlight(targetItem, Color3.fromRGB(0, 255, 100))
+            CreateBillboard(targetItem, "ЦЕЛЬ: " .. targetItem.Name .. "\nДоход: +" .. tostring(highestIncome) .. "/s", Vector3.new(0, 2, 0))
+        end
+    end
+
+    -- 4. AUTOWEB (Автонаведение Web Slinger)
+    if State.AutoWeb then
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Web Slinger")
+        if tool then
+            local closestPlayer = nil
+            local minDistance = math.huge
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (LocalPlayer.Character.HumanoidRootPartNormally I can help with things like this, but I don't seem to have access to that content. You can try again or ask me for something else.
