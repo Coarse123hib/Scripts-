@@ -1,0 +1,504 @@
+-- узел: meridian/roblox/piggy_v2_optimized
+-- deps: Delta Executor (Roblox Lua environment)
+-- параметры: Неоновый бело-салатовый интерфейс, Всеобщий WH, InfJump, GodMode, Фильтр предметов
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Уничтожение старого контура, если он активен
+if game:GetService("CoreGui"):FindFirstChild("Morn_Core_Menu_V2") then
+    game:GetService("CoreGui")["Morn_Core_Menu_V2"]:Destroy()
+end
+
+-- Инициализация GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Morn_Core_Menu_V2"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("CoreGui")
+
+-- Стилизация: Палитра
+local Color_Background = Color3.fromRGB(18, 18, 22)
+local Color_Panel = Color3.fromRGB(24, 25, 30)
+local Color_Accent = Color3.fromRGB(163, 255, 71) -- Салатовый
+local Color_TextLight = Color3.fromRGB(245, 245, 245)
+local Color_TextDim = Color3.fromRGB(150, 155, 165)
+
+-- Круглая кнопка активации (Бело-салатовый дизайн)
+local ToggleButton = Instance.new("ImageButton")
+local UICorner_Toggle = Instance.new("UICorner")
+local UIStroke_Toggle = Instance.new("UIStroke")
+
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(0, 55, 0, 55)
+ToggleButton.Position = UDim2.new(0, 25, 0.5, -27)
+ToggleButton.BackgroundColor3 = Color_Background
+ToggleButton.Image = "rbxassetid://12903722254"
+ToggleButton.ImageColor3 = Color_TextLight
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Parent = ScreenGui
+
+UICorner_Toggle.CornerRadius = UDim.new(1, 0)
+UICorner_Toggle.Parent = ToggleButton
+
+UIStroke_Toggle.Thickness = 2
+UIStroke_Toggle.Color = Color_Accent
+UIStroke_Toggle.Parent = ToggleButton
+
+-- Главное горизонтальное меню
+local MainFrame = Instance.new("Frame")
+local UICorner_Main = Instance.new("UICorner")
+local UIStroke_Main = Instance.new("UIStroke")
+
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 580, 0, 320)
+MainFrame.Position = UDim2.new(0.5, -290, 0.5, -160)
+MainFrame.BackgroundColor3 = Color_Background
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+UICorner_Main.CornerRadius = UDim.new(0, 12)
+UICorner_Main.Parent = MainFrame
+
+UIStroke_Main.Thickness = 1.5
+UIStroke_Main.Color = Color_Accent
+UIStroke_Main.Parent = MainFrame
+
+-- Навигация (Табы)
+local TabContainer = Instance.new("Frame")
+TabContainer.Size = UDim2.new(0, 140, 1, 0)
+TabContainer.BackgroundColor3 = Color_Panel
+TabContainer.Parent = MainFrame
+
+local UICorner_Tab = Instance.new("UICorner")
+UICorner_Tab.CornerRadius = UDim.new(0, 12)
+UICorner_Tab.Parent = TabContainer
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.Parent = TabContainer
+TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabLayout.Padding = UDim.new(0, 2)
+
+-- Контейнер для контента
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Size = UDim2.new(1, -160, 1, -20)
+ContentContainer.Position = UDim2.new(0, 150, 0, 10)
+ContentContainer.BackgroundTransparency = 1
+ContentContainer.Parent = MainFrame
+
+-- Разделы
+local Pages = {
+    ESP = Instance.new("Frame"),
+    Player = Instance.new("Frame"),
+    Items = Instance.new("Frame")
+}
+
+for Name, Frame in pairs(Pages) do
+    Frame.Size = UDim2.new(1, 0, 1, 0)
+    Frame.BackgroundTransparency = 1
+    Frame.Visible = (Name == "ESP")
+    Frame.Parent = ContentContainer
+    
+    local Layout = Instance.new("UIListLayout")
+    Layout.Parent = Frame
+    Layout.Padding = UDim.new(0, 12)
+end
+
+local function CreateTab(name, order)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 45)
+    Button.BackgroundColor3 = Color_Panel
+    Button.Text = "  " .. name
+    Button.TextColor3 = Color_TextDim
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 16
+    Button.TextXAlignment = Enum.TextXAlignment.Left
+    Button.BorderSizePixel = 0
+    Button.LayoutOrder = order
+    Button.Parent = TabContainer
+    
+    local Indicator = Instance.new("Frame")
+    Indicator.Size = UDim2.new(0, 4, 1, 0)
+    Indicator.BackgroundColor3 = Color_Accent
+    Indicator.Visible = (order == 1)
+    Indicator.BorderSizePixel = 0
+    Indicator.Parent = Button
+
+    Button.MouseButton1Click:Connect(function()
+        for PName, PFrame in pairs(Pages) do
+            PFrame.Visible = (PName == name)
+        end
+        for _, child in pairs(TabContainer:GetChildren()) do
+            if child:IsA("TextButton") then
+                child.TextColor3 = Color_TextDim
+                child.FindFirstChild("Frame").Visible = false
+            end
+        end
+        Button.TextColor3 = Color_Accent
+        Indicator.Visible = true
+    end)
+end
+
+CreateTab("ESP", 1)
+CreateTab("Player", 2)
+CreateTab("Items", 3)
+
+-- Drag Logic
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseBehavior or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then update(input) end
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- Конструктор переключателей с салатовой анимацией
+local function CreateToggle(parent, text, callback)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, -10, 0, 40)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = parent
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.Text = text
+    Label.TextColor3 = Color_TextLight
+    Label.Font = Enum.Font.SourceSans
+    Label.TextSize = 16
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.BackgroundTransparency = 1
+    Label.Parent = Frame
+    
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(0, 50, 0, 26)
+    Button.Position = UDim2.new(1, -50, 0.5, -13)
+    Button.BackgroundColor3 = Color3.fromRGB(40, 42, 50)
+    Button.Text = ""
+    Button.Parent = Frame
+    
+    local BCorner = Instance.new("UICorner")
+    BCorner.CornerRadius = UDim.new(0, 6)
+    BCorner.Parent = Button
+    
+    local BStroke = Instance.new("UIStroke")
+    BStroke.Thickness = 1
+    BStroke.Color = Color3.fromRGB(70, 75, 85)
+    BStroke.Parent = Button
+
+    local Dot = Instance.new("Frame")
+    Dot.Size = UDim2.new(0, 18, 0, 18)
+    Dot.Position = UDim2.new(0, 4, 0.5, -9)
+    Dot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    Dot.Parent = Button
+    
+    local DCorner = Instance.new("UICorner")
+    DCorner.CornerRadius = UDim.new(1, 0)
+    DCorner.Parent = Dot
+    
+    local state = false
+    Button.MouseButton1Click:Connect(function()
+        state = not state
+        Dot.Position = state and UDim2.new(1, -22, 0.5, -9) or UDim2.new(0, 4, 0.5, -9)
+        Dot.BackgroundColor3 = state and Color_Background or Color3.fromRGB(150, 150, 150)
+        Button.BackgroundColor3 = state and Color_Accent or Color3.fromRGB(40, 42, 50)
+        BStroke.Color = state and Color_Accent or Color3.fromRGB(70, 75, 85)
+        callback(state)
+    end)
+end
+
+-- Стейт-контроллер систем
+local State = {
+    WallhackAll = false,
+    Noclip = false,
+    InfJump = false,
+    GodMode = false,
+    WalkSpeed = 16
+}
+
+-- Модуль тотального Wallhack (Все игроки, боты, сущности)
+local WH_Elements = {}
+
+local function ClearWH()
+    for _, obj in pairs(WH_Elements) do
+        if obj then obj:Destroy() end
+    end
+    table.clear(WH_Elements)
+end
+
+local function ConstructWH(character, color)
+    if character:FindFirstChild("MornWH") then return end
+    local Box = Instance.new("BoxHandleAdornment")
+    Box.Name = "MornWH"
+    Box.Size = character:GetExtentsSize() + Vector3.new(0.1, 0.1, 0.1)
+    Box.AlwaysOnTop = true
+    Box.ZIndex = 5
+    Box.Adornee = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+    Box.Color3 = color
+    Box.Transparency = 0.6
+    Box.Parent = game:GetService("CoreGui")
+    table.insert(WH_Elements, Box)
+end
+
+task.spawn(function()
+    while task.wait(1.5) do
+        if State.WallhackAll then
+            ClearWH()
+            for _, obj in pairs(Workspace:GetDescendants()) do
+                if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= LocalPlayer.Character then
+                    local root = obj.Parent:FindFirstChild("HumanoidRootPart") or obj.Parent.PrimaryPart
+                    if root then
+                        local charName = obj.Parent.Name:lower()
+                        local isPiggy = false
+                        
+                        if charName:find("piggy") or obj.Parent:GetAttribute("IsPiggy") == true or Players:GetPlayerFromCharacter(obj.Parent) == nil then
+                            isPiggy = true
+                        end
+                        
+                        local targetColor = isPiggy and Color3.fromRGB(255, 40, 40) or Color3.fromRGB(40, 255, 40)
+                        ConstructWH(obj.Parent, targetColor)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+CreateToggle(Pages.ESP, "Wallhack (All & Bots)", function(val)
+    State.WallhackAll = val
+    if not val then ClearWH() end
+end)
+
+-- Раздел 2: Player
+local WSFrame = Instance.new("Frame")
+WSFrame.Size = UDim2.new(1, -10, 0, 40)
+WSFrame.BackgroundTransparency = 1
+WSFrame.Parent = Pages.Player
+
+local WSLabel = Instance.new("TextLabel")
+WSLabel.Size = UDim2.new(0.5, 0, 1, 0)
+WSLabel.Text = "Walkspeed ввод:"
+WSLabel.TextColor3 = Color_TextLight
+WSLabel.Font = Enum.Font.SourceSans
+WSLabel.TextSize = 16
+WSLabel.TextXAlignment = Enum.TextXAlignment.Left
+WSLabel.BackgroundTransparency = 1
+WSLabel.Parent = WSFrame
+
+local WSInput = Instance.new("TextBox")
+WSInput.Size = UDim2.new(0, 90, 0, 28)
+WSInput.Position = UDim2.new(1, -90, 0.5, -14)
+WSInput.BackgroundColor3 = Color_Panel
+WSInput.Text = "16"
+WSInput.TextColor3 = Color_Accent
+WSInput.Font = Enum.Font.SourceSansBold
+WSInput.TextSize = 14
+WSInput.ClearTextOnFocus = false
+WSInput.Parent = WSFrame
+
+local WSInputStroke = Instance.new("UIStroke")
+WSInputStroke.Color = Color3.fromRGB(60, 60, 70)
+WSInputStroke.Parent = WSInput
+
+WSInput.FocusLost:Connect(function()
+    local num = tonumber(WSInput.Text)
+    if num then
+        if num > 500 then num = 500 elseif num < 16 then num = 16 end
+        State.WalkSpeed = num
+        WSInput.Text = tostring(num)
+    else
+        WSInput.Text = tostring(State.WalkSpeed)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = State.WalkSpeed
+    end
+end)
+
+CreateToggle(Pages.Player, "Noclip", function(val) State.Noclip = val end)
+
+RunService.Stepped:Connect(function()
+    if State.Noclip and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+end)
+
+-- Новая функция: Infinity Jump
+CreateToggle(Pages.Player, "Infinity Jump", function(val) State.InfJump = val end)
+
+UserInputService.JumpRequest:Connect(function()
+    if State.InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- Новая функция: God Mode
+CreateToggle(Pages.Player, "God Mode", function(val)
+    State.GodMode = val
+    if val and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").MaxHealth = math.huge
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").Health = math.huge
+    elseif not val and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").MaxHealth = 100
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").Health = 100
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if State.GodMode and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        hum.Health = hum.MaxHealth
+        -- Блокировка падения и локальных скриптов смерти свиньи
+        if LocalPlayer.Character:FindFirstChild("ForceField") == nil then
+            local ff = Instance.new("ForceField")
+            ff.Visible = false
+            ff.Parent = LocalPlayer.Character
+        end
+    else
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("ForceField") and not State.GodMode then
+            LocalPlayer.Character:FindFirstChild("ForceField"):Destroy()
+        end
+    end
+end)
+
+
+-- Раздел 3: Items (Очистка имен от ID)
+local SelectedItem = ""
+local TargetItemInstance = nil
+
+local ItemDropdownFrame = Instance.new("ScrollingFrame")
+ItemDropdownFrame.Size = UDim2.new(1, -10, 0, 160)
+ItemDropdownFrame.BackgroundColor3 = Color_Panel
+ItemDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ItemDropdownFrame.ScrollBarThickness = 4
+ItemDropdownFrame.Parent = Pages.Items
+
+local ItemDropdownStroke = Instance.new("UIStroke")
+ItemDropdownStroke.Color = Color3.fromRGB(45, 45, 55)
+ItemDropdownStroke.Parent = ItemDropdownFrame
+
+local ItemLayout = Instance.new("UIListLayout")
+ItemLayout.Parent = ItemDropdownFrame
+ItemLayout.Padding = UDim.new(0, 4)
+
+-- Функция очистки хэшей и идентификаторов из названий
+local function CleanItemName(rawName)
+    local clean = rawName:gsub("^[-%d]+", "") -- Удаление ведущих цифр и дефисов
+    clean = clean:gsub("[-%d]+$", "") -- Удаление хвостовых цифр
+    clean = clean:gsub("Token%d+", "Token")
+    clean = clean:gsub("Key%d+", "Key")
+    if clean == "" or clean == " " then clean = rawName end -- Фоллбэк
+    return clean
+end
+
+local function ScanMapItems()
+    for _, child in pairs(ItemDropdownFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    
+    local itemsFound = {}
+    
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Tool") or (obj:IsA("ClickDetector") and obj.Parent) then
+            local rawName = obj:IsA("Tool") and obj.Name or obj.Parent.Name
+            local cleanName = CleanItemName(rawName)
+            
+            if not itemsFound[cleanName] then
+                itemsFound[cleanName] = obj:IsA("Tool") and obj or obj.Parent
+                
+                local ItemButton = Instance.new("TextButton")
+                ItemButton.Size = UDim2.new(1, -8, 0, 32)
+                ItemButton.BackgroundColor3 = Color_Background
+                ItemButton.Text = "  " .. cleanName
+                ItemButton.TextColor3 = Color_TextLight
+                ItemButton.Font = Enum.Font.SourceSans
+                ItemButton.TextSize = 15
+                ItemButton.TextXAlignment = Enum.TextXAlignment.Left
+                ItemButton.Parent = ItemDropdownFrame
+                
+                local IBS = Instance.new("UIStroke")
+                IBS.Color = Color3.fromRGB(40, 40, 45)
+                IBS.Parent = ItemButton
+
+                ItemButton.MouseButton1Click:Connect(function()
+                    SelectedItem = cleanName
+                    TargetItemInstance = itemsFound[cleanName]
+                    ActionButton.Text = "Получить: " .. cleanName
+                end)
+            end
+        end
+    end
+    ItemDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, ItemLayout.AbsoluteContentSize.Y)
+end
+
+Pages.Items:GetPropertyChangedSignal("Visible"):Connect(function()
+    if Pages.Items.Visible then ScanMapItems() end
+end)
+
+local GiveItemFrame = Instance.new("Frame")
+GiveItemFrame.Size = UDim2.new(1, -10, 0, 40)
+GiveItemFrame.BackgroundTransparency = 1
+GiveItemFrame.Parent = Pages.Items
+
+local ActionButton = Instance.new("TextButton")
+ActionButton.Size = UDim2.new(1, 0, 0, 38)
+ActionButton.BackgroundColor3 = Color_Accent
+ActionButton.Text = "Вручить выбранный предмет"
+ActionButton.TextColor3 = Color_Background
+ActionButton.Font = Enum.Font.SourceSansBold
+ActionButton.TextSize = 15
+ActionButton.Parent = GiveItemFrame
+
+local ABCorner = Instance.new("UICorner")
+ABCorner.CornerRadius = UDim.new(0, 6)
+ABCorner.Parent = ActionButton
+
+ActionButton.MouseButton1Click:Connect(function()
+    if not TargetItemInstance or not TargetItemInstance.Parent then 
+        ScanMapItems() -- Пересканировать если объект удален/изменен
+        return 
+    end
+    
+    if TargetItemInstance:IsA("Tool") then
+        TargetItemInstance.Parent = LocalPlayer.Backpack
+    else
+        local cd = TargetItemInstance:FindFirstChildOfClass("ClickDetector")
+        if cd then
+            fireclickdetector(cd)
+        else
+            local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local oldPos = root.CFrame
+                root.CFrame = TargetItemInstance:GetPivot()
+                task.wait(0.2)
+                root.CFrame = oldPos
+            end
+        end
+    end
+end)
