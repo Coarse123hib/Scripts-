@@ -1,40 +1,520 @@
--- Steal a Brainrot GUI Script for Delta Executor - FIXED VERSION
--- Draggable circle + horizontal menu with tabs
+-- узел: meridian/roblox_brainrot_core
+-- среда: Delta Executor (Roblox Lua / Luau)
+-- параметры: полная автономная инициализация UI и функциональных потоков
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
+local LocalPlayer = Players.LocalPlayer
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "BrainrotGUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player:WaitForChild("PlayerGui")
+-- Инициализация защищенного контейнера UI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Morn_Terminal_Core"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function()
+    ScreenGui.Parent = CoreGui
+end)
 
--- Circular Button
-local circleButton = Instance.new("ImageButton")
-circleButton.Name = "CircleButton"
-circleButton.Size = UDim2.new(0, 70, 0, 70)
-circleButton.Position = UDim2.new(0.05, 0, 0.4, 0)
-circleButton.BackgroundTransparency = 1
-circleButton.Image = "rbxassetid://3926305904" -- Roblox-style icon
-circleButton.ImageColor3 = Color3.fromRGB(0, 170, 255)
-circleButton.Parent = screenGui
+-- Глобальные состояния флагов
+local Flags = {
+    EspPlayer = false,
+    EspLock = false,
+    EspHeightBrainrot = false,
+    InfJump = false,
+    JumpBoost = false,
+    JumpPower = 50,
+    SpeedBoost = false,
+    WalkSpeed = 16,
+    AutoWeb = false,
+    AutoGrab = false
+}
 
-local dragging = false
-local dragInput
-local dragStart
-local startPos
+-- Кэш объектов для отрисовки ESP
+local ESP_Cache = {}
+local Brainrot_ESP_Box = nil
+local Brainrot_ESP_Billboard = nil
 
-circleButton.InputBegan:Connect(function(input)
+-- Стили оформления (Пиксельный стиль)
+local Theme = {
+    Background = Color3.fromRGB(20, 20, 20),
+    SectionBackground = Color3.fromRGB(30, 30, 30),
+    Accent = Color3.fromRGB(0, 150, 255),
+    Text = Color3.fromRGB(240, 240, 240),
+    ToggleOn = Color3.fromRGB(0, 200, 100),
+    ToggleOff = Color3.fromRGB(80, 80, 80),
+    Font = Enum.Font.Code
+}
+
+--------------------------------------------------------------------------------
+-- МОДУЛЬ UI: Создание интерфейса
+--------------------------------------------------------------------------------
+
+-- Круглая кнопка вызова
+local MainToggleButton = Instance.new("ImageButton")
+MainToggleButton.Name = "MornToggle"
+MainToggleButton.Size = UDim2.new(0, 50, 0, 50)
+MainToggleButton.Position = UDim2.new(0, 100, 0, 100)
+MainToggleButton.BackgroundColor3 = Theme.Background
+MainToggleButton.Image = "rbxassetid://6031763426" -- Стандартный системный ассет
+MainToggleButton.ScaleType = Enum.ScaleType.Fit
+MainToggleButton.Parent = ScreenGui
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(1, 0)
+ButtonCorner.Parent = MainToggleButton
+
+local ButtonStroke = Instance.new("UIStroke")
+ButtonStroke.Color = Theme.Accent
+ButtonStroke.Thickness = 2
+ButtonStroke.Parent = MainToggleButton
+
+-- Реализация перетаскивания (Drag) для круглой кнопки
+local dragging, dragInput, dragStart, startPos
+MainToggleButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
+        startPos = MainToggleButton.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+MainToggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainToggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Основное меню (Прямоугольное, горизонтальное)
+local MainWindow = Instance.new("Frame")
+MainWindow.Name = "MornWindow"
+MainWindow.Size = UDim2.new(0, 620, 0, 320)
+MainWindow.Position = UDim2.new(0.5, -310, 0.5, -160)
+MainWindow.BackgroundColor3 = Theme.Background
+MainWindow.Visible = false
+MainWindow.Parent = ScreenGui
+
+local WindowCorner = Instance.new("UICorner")
+WindowCorner.CornerRadius = UDim.new(0, 4)
+WindowCorner.Parent = MainWindow
+
+local WindowStroke = Instance.new("UIStroke")
+WindowStroke.Color = Theme.Accent
+WindowStroke.Thickness = 1
+WindowStroke.Parent = MainWindow
+
+-- Заголовок меню
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, 0, 0, 25)
+TitleLabel.BackgroundColor3 = Theme.SectionBackground
+TitleLabel.Text = " MORN CORE // STEAL A BRAINROT"
+TitleLabel.TextColor3 = Theme.Text
+TitleLabel.Font = Theme.Font
+TitleLabel.TextSize = 14
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = MainWindow
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 4)
+TitleCorner.Parent = TitleLabel
+
+-- Контейнер для горизонтального размещения разделов
+local HorizontalLayoutContainer = Instance.new("Frame")
+HorizontalLayoutContainer.Size = UDim2.new(1, -20, 1, -45)
+HorizontalLayoutContainer.Position = UDim2.new(0, 10, 0, 35)
+HorizontalLayoutContainer.BackgroundTransparency = 1
+HorizontalLayoutContainer.Parent = MainWindow
+
+local MainListLayout = Instance.new("UIListLayout")
+MainListLayout.FillDirection = Enum.FillDirection.Horizontal
+MainListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+MainListLayout.Padding = UDim.new(0, 10)
+MainListLayout.Parent = HorizontalLayoutContainer
+
+-- Функция генерации колонок (разделов)
+local function CreateSection(name, layoutOrder)
+    local SectionFrame = Instance.new("Frame")
+    SectionFrame.Size = UDim2.new(0, 193, 1, 0)
+    SectionFrame.BackgroundColor3 = Theme.SectionBackground
+    SectionFrame.LayoutOrder = layoutOrder
+    SectionFrame.Parent = HorizontalLayoutContainer
+    
+    local SectionCorner = Instance.new("UICorner")
+    SectionCorner.CornerRadius = UDim.new(0, 4)
+    SectionCorner.Parent = SectionFrame
+    
+    local SectionTitle = Instance.new("TextLabel")
+    SectionTitle.Size = UDim2.new(1, 0, 0, 20)
+    SectionTitle.BackgroundTransparency = 1
+    SectionTitle.Text = "[" .. name .. "]"
+    SectionTitle.TextColor3 = Theme.Accent
+    SectionTitle.Font = Theme.Font
+    SectionTitle.TextSize = 13
+    SectionTitle.Parent = SectionFrame
+    
+    local ContentContainer = Instance.new("ScrollingFrame")
+    ContentContainer.Size = UDim2.new(1, -10, 1, -30)
+    ContentContainer.Position = UDim2.new(0, 5, 0, 25)
+    ContentContainer.BackgroundTransparency = 1
+    ContentContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+    ContentContainer.ScrollBarThickness = 2
+    ContentContainer.Parent = SectionFrame
+    
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.FillDirection = Enum.FillDirection.Vertical
+    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentLayout.Padding = UDim.new(0, 6)
+    ContentLayout.Parent = ContentContainer
+    
+    ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        ContentContainer.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 10)
+    end)
+    
+    return ContentContainer
+end
+
+local EspSection = CreateSection("ESP", 1)
+local PlayerSection = CreateSection("PLAYER", 2)
+local AutoSection = CreateSection("AUTO", 3)
+
+-- Функция создания Переключателя (Toggle)
+local function CreateToggle(parent, text, flagName, callback)
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Size = UDim2.new(1, 0, 0, 24)
+    ToggleFrame.BackgroundTransparency = 1
+    ToggleFrame.Parent = parent
+    
+    local ToggleLabel = Instance.new("TextLabel")
+    ToggleLabel.Size = UDim2.new(1, -35, 1, 0)
+    ToggleLabel.BackgroundTransparency = 1
+    ToggleLabel.Text = text
+    ToggleLabel.TextColor3 = Theme.Text
+    ToggleLabel.Font = Theme.Font
+    ToggleLabel.TextSize = 12
+    ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleLabel.Parent = ToggleFrame
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(0, 30, 0, 16)
+    ToggleButton.Position = UDim2.new(1, -30, 0.5, -8)
+    ToggleButton.BackgroundColor3 = Flags[flagName] and Theme.ToggleOn or Theme.ToggleOff
+    ToggleButton.Text = ""
+    ToggleButton.Parent = ToggleFrame
+    
+    local ButtonElementCorner = Instance.new("UICorner")
+    ButtonElementCorner.CornerRadius = UDim.new(0, 3)
+    ButtonElementCorner.Parent = ToggleButton
+    
+    ToggleButton.MouseButton1Click:Connect(function()
+        Flags[flagName] = not Flags[flagName]
+        TweenService:Create(ToggleButton, TweenInfo.new(0.15), {
+            BackgroundColor3 = Flags[flagName] and Theme.ToggleOn or Theme.ToggleOff
+        }):Play()
+        if callback then callback(Flags[flagName]) end
+    end)
+end
+
+-- Функция создания Поля Ввода (TextBox)
+local function CreateTextBox(parent, placeholder, flagName, minVal, maxVal, callback)
+    local InputFrame = Instance.new("Frame")
+    InputFrame.Size = UDim2.new(1, 0, 0, 24)
+    InputFrame.BackgroundTransparency = 1
+    InputFrame.Parent = parent
+    
+    local Box = Instance.new("TextBox")
+    Box.Size = UDim2.new(1, 0, 1, 0)
+    Box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Box.PlaceholderText = placeholder .. " (" .. minVal .. "-" .. maxVal .. ")"
+    Box.Text = tostring(Flags[flagName])
+    Box.TextColor3 = Theme.Text
+    Box.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+    Box.Font = Theme.Font
+    Box.TextSize = 11
+    Box.ClearTextOnFocus = false
+    Box.Parent = InputFrame
+    
+    local BoxCorner = Instance.new("UICorner")
+    BoxCorner.CornerRadius = UDim.new(0, 3)
+    BoxCorner.Parent = Box
+    
+    local BoxStroke = Instance.new("UIStroke")
+    BoxStroke.Color = Theme.SectionBackground
+    BoxStroke.Thickness = 1
+    BoxStroke.Parent = Box
+    
+    Box.FocusLost:Connect(function(enterPressed)
+        local num = tonumber(Box.Text)
+        if num then
+            num = math.clamp(num, minVal, maxVal)
+            Box.Text = tostring(num)
+            Flags[flagName] = num
+            if callback then callback(num) end
+        else
+            Box.Text = tostring(Flags[flagName])
+        end
+    end)
+end
+
+-- Переключатель видимости основного меню
+MainToggleButton.MouseButton1Click:Connect(function()
+    MainWindow.Visible = not MainWindow.Visible
+end)
+
+--------------------------------------------------------------------------------
+-- ЗАПОЛНЕНИЕ ИНТЕРФЕЙСА ЭЛЕМЕНТАМИ УПРАВЛЕНИЯ
+--------------------------------------------------------------------------------
+
+-- Наполнение секции ESP
+CreateToggle(EspSection, "ESP Player", "EspPlayer", function(val)
+    if not val then
+        for rblxPlayer, elements in pairs(ESP_Cache) do
+            if elements.Highlight then elements.Highlight:Destroy() end
+            if elements.Billboard then elements.Billboard:Destroy() end
+            ESP_Cache[rblxPlayer] = nil
+        end
+    end
+end)
+
+CreateToggle(EspSection, "ESP Lock", "EspLock", function(val)
+    if not val then
+        for _, elements in pairs(ESP_Cache) do
+            if elements.Billboard then elements.Billboard.Enabled = false end
+        end
+    else
+        for _, elements in pairs(ESP_Cache) do
+            if elements.Billboard then elements.Billboard.Enabled = true end
+        end
+    end
+end)
+
+CreateToggle(EspSection, "ESP Height Brainrot", "EspHeightBrainrot", function(val)
+    if not val then
+        if Brainrot_ESP_Box then Brainrot_ESP_Box:Destroy() Brainrot_ESP_Box = nil end
+        if Brainrot_ESP_Billboard then Brainrot_ESP_Billboard:Destroy() Brainrot_ESP_Billboard = nil end
+    end
+end)
+
+-- Наполнение секции PLAYER
+CreateToggle(PlayerSection, "Speed Boost", "SpeedBoost", function(val)
+    if not val and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+    end
+end)
+CreateTextBox(PlayerSection, "Speed Value", "WalkSpeed", 16, 300, function(val)
+    if Flags.SpeedBoost and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = val
+    end
+end)
+
+CreateToggle(PlayerSection, "Jump Boost", "JumpBoost", function(val)
+    if not val and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum.UseJumpPower then hum.JumpPower = 50 else hum.JumpHeight = 7.2 end
+    end
+end)
+CreateTextBox(PlayerSection, "Jump Value", "JumpPower", 21, 100, function(val)
+    if Flags.JumpBoost and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum.UseJumpPower then hum.JumpPower = val else hum.JumpHeight = val / 3.5 end -- Относительный пересчет высоты прыжка
+    end
+end)
+
+CreateToggle(PlayerSection, "Infinity Jump", "InfJump", nil)
+
+-- Наполнение секции AUTO
+CreateToggle(AutoSection, "Auto Web Slinger", "AutoWeb", nil)
+CreateToggle(AutoSection, "Auto Grab (E)", "AutoGrab", nil)
+
+--------------------------------------------------------------------------------
+-- ФУНКЦИОНАЛЬНЫЕ ПОТОКИ (ЛОГИКА СТАНЦИИ)
+--------------------------------------------------------------------------------
+
+-- Логика Infinite Jump (Безопасный триггер прыжка)
+UserInputService.JumpRequest:Connect(function()
+    if Flags.InfJump and LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- Вспомогательная функция для безопасного получения таймера базы игрока
+local function GetPlayerBaseTimer(player)
+    -- Сканирование структуры папки Tycoons/Bases в зависимости от архитектуры ассетов Steal a Brainrot
+    local bases = Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("Tycoons")
+    if bases then
+        for _, base in pairs(bases:GetChildren()) do
+            if base:GetAttribute("Owner") == player.Name or (base:FindFirstChild("Owner") and base.Owner.Value == player) then
+                local timerVal = base:FindFirstChild("Timer") or base:FindFirstChild("TimeLeft")
+                if timerVal and (timerVal:IsA("ValueBase") or timerVal:IsA("IntValue") or timerVal:IsA("NumberValue")) then
+                    return tostring(timerVal.Value) .. "s"
+                elseif base:GetAttribute("Timer") then
+                    return tostring(base:GetAttribute("Timer")) .. "s"
+                end
+            end
+        end
+    end
+    return "0s"
+end
+
+-- Отрисовка/Обновление ESP игроков
+local function ManagePlayerESP(player)
+    if player == LocalPlayer then return end
+    
+    local function applyESP(character)
+        if not Flags.EspPlayer then return end
+        local root = character:WaitForChild("HumanoidRootPart", 5)
+        if not root then return end
+        
+        if not ESP_Cache[player] then
+            ESP_Cache[player] = {}
+        end
+        
+        -- Синий хитбокс (Highlight)
+        if not ESP_Cache[player].Highlight or not ESP_Cache[player].Highlight.Parent then
+            local highlight = Instance.new("Highlight")
+            highlight.FillColor = Color3.fromRGB(0, 100, 255)
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.Adornee = character
+            highlight.Parent = ScreenGui
+            ESP_Cache[player].Highlight = highlight
+        end
+        
+        -- Таймер Базы (BillboardGui)
+        if not ESP_Cache[player].Billboard or not ESP_Cache[player].Billboard.Parent then
+            local bbg = Instance.new("BillboardGui")
+            bbg.Size = UDim2.new(0, 100, 0, 30)
+            bbg.AlwaysOnTop = true
+            bbg.ExtentsOffset = Vector3.new(0, 3, 0)
+            bbg.Adornee = root
+            bbg.Enabled = Flags.EspLock
+            
+            local textLabel = Instance.new("TextLabel")
+            textLabel.Size = UDim2.new(1, 0, 1, 0)
+            textLabel.BackgroundTransparency = 1
+            textLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            textLabel.Font = Theme.Font
+            textLabel.TextSize = 14
+            textLabel.Text = "Base: --"
+            textLabel.Parent = bbg
+            
+            bbg.Parent = ScreenGui
+            ESP_Cache[player].Billboard = bbg
+            ESP_Cache[player].TextLabel = textLabel
+        end
+    end
+
+    if player.Character then
+        task.spawn(applyESP, player.Character)
+    end
+    player.CharacterAdded:Connect(function(char)
+        task.spawn(applyESP, char)
+    end)
+end
+
+for _, p in pairs(Players:GetPlayers()) do ManagePlayerESP(p) end
+Players.PlayerAdded:Connect(ManagePlayerESP)
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESP_Cache[player] then
+        if ESP_Cache[player].Highlight then ESP_Cache[player].Highlight:Destroy() end
+        if ESP_Cache[player].Billboard then ESP_Cache[player].Billboard:Destroy() end
+        ESP_Cache[player] = nil
+    end
+end)
+
+-- Функция поиска самого прибыльного Brainrot на карте
+local function FindHighestBrainrot()
+    local highestValue = -1
+    local targetObject = nil
+    local incomePerSecond = 0
+    local bName = "Unknown"
+
+    -- Поиск объектов в Workspace (обычно Brainrots лежат в выделенной папке или прямо на карте)
+    local itemsContainer = Workspace:FindFirstChild("DroppedItems") or Workspace:FindFirstChild("Brainrots") or Workspace
+    for _, item in pairs(itemsContainer:GetChildren()) do
+        if item:IsA("Model") or item:IsA("BasePart") then
+            -- Чтение параметров ценности из атрибутов или внутренних значений
+            local valueAttr = item:GetAttribute("Income") or item:GetAttribute("Value") or item:GetAttribute("Price")
+            local valueValue = item:FindFirstChild("Income") or item:FindFirstChild("Value")
+            
+            local currentVal = 0
+            if valueAttr then currentVal = tonumber(valueAttr)
+            elseif valueValue and valueValue:IsA("ValueBase") then currentVal = tonumber(valueValue.Value) end
+            
+            if currentVal and currentVal > highestValue and item:SetPrimaryPartCFrame() or item:IsA("BasePart") then
+                highestValue = currentVal
+                targetObject = item
+                incomePerSecond = currentVal
+                bName = item.Name
+            end
+        end
+    end
+    return targetObject, bName, incomePerSecond
+end
+
+-- Единый рабочий цикл ядра (RunService Heartbeat)
+RunService.Heartbeat:Connect(function()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not rootPart then return end
+
+    -- Постоянный апдейт параметров Player модификаторов
+    if Flags.SpeedBoost then
+        humanoid.WalkSpeed = Flags.WalkSpeed
+    end
+    if Flags.JumpBoost then
+        if humanoid.UseJumpPower then
+            humanoid.JumpPower = Flags.JumpPower
+        else
+            humanoid.JumpHeight = Flags.JumpPower / 3.5
+        end
+    end
+
+    -- Обновление текстовых данных ESP Lock
+    if Flags.EspPlayer and Flags.EspLock then
+        for rblxPlayer, elements in pairs(ESP_Cache) do
+            if elements.TextLabel and rblxPlayer.Parent then
+                elements.TextLabel.Text = "Base: " .. GetPlayerBaseTimer(rblxPlayer)
+            end
+        end
+    end
+
+    -- Логика обработки ESP Height Brainrot
+    if Flags.EspHeightBrainrot then
+        local target, name, income = FindHighestBrainrot()
+        if target then
+            local part = target:IsA("BasePart") and target or target.PrimaryPart
+            if part then
+                if not Brainrot_ESP_Box then
+                    Brainrot_ESP_Box = Instance.new("BoxHandleAdornment")
+                    Brainrot_ESP_Box.Color3 = Color3.fromRGB(255, 255, 0)
+                    Brainrot_ESP_Box.AlwaysOnTop = true
+                    Brainrot_ESP_Box.ZIndex = 5
+                            dragStart = input.Position
         startPos = circleButton.Position
     end
 end)
