@@ -1,0 +1,403 @@
+-- узел: meridian/roblox/piggy_delta_exploit
+-- deps: Delta Executor (Roblox Lua environment)
+-- параметры: интерфейс управления, модули ESP, Player, Items
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- Инициализация GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Morn_Core_Menu"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("CoreGui")
+
+-- Круглая кнопка активации (Иконка Обезьяны)
+local ToggleButton = Instance.new("ImageButton")
+local UICorner_Toggle = Instance.new("UICorner")
+
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(0, 60, 0, 60)
+ToggleButton.Position = UDim2.new(0, 20, 0.5, -30)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+ToggleButton.Image = "rbxassetid://12903722254" -- Иконка обезьяны
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Parent = ScreenGui
+
+UICorner_Toggle.CornerRadius = UDim.new(1, 0)
+UICorner_Toggle.Parent = ToggleButton
+
+-- Главное горизонтальное меню
+local MainFrame = Instance.new("Frame")
+local UICorner_Main = Instance.new("UICorner")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 550, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -275, 0.5, -150)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+UICorner_Main.CornerRadius = UDim.new(0, 10)
+UICorner_Main.Parent = MainFrame
+
+-- Навигация по разделам (Табы)
+local TabContainer = Instance.new("Frame")
+TabContainer.Size = UDim2.new(0, 130, 1, 0)
+TabContainer.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+TabContainer.Parent = MainFrame
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.Parent = TabContainer
+TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Контейнер для контента
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Size = UDim2.new(1, -140, 1, -20)
+ContentContainer.Position = UDim2.new(0, 140, 0, 10)
+ContentContainer.BackgroundTransparency = 1
+ContentContainer.Parent = MainFrame
+
+-- Разделы (Страницы)
+local Pages = {
+    ESP = Instance.new("Frame"),
+    Player = Instance.new("Frame"),
+    Items = Instance.new("Frame")
+}
+
+for Name, Frame in pairs(Pages) do
+    Frame.Size = UDim2.new(1, 0, 1, 0)
+    Frame.BackgroundTransparency = 1
+    Frame.Visible = (Name == "ESP")
+    Frame.Parent = ContentContainer
+    
+    local Layout = Instance.new("UIListLayout")
+    Layout.Parent = Frame
+    Layout.Padding = UDim.new(0, 10)
+end
+
+-- Переключение табов
+local function CreateTab(name, order)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 40)
+    Button.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    Button.Text = name
+    Button.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 16
+    Button.LayoutOrder = order
+    Button.Parent = TabContainer
+    
+    Button.MouseButton1Click:Connect(function()
+        for PName, PFrame in pairs(Pages) do
+            PFrame.Visible = (PName == name)
+        end
+    end)
+end
+
+CreateTab("ESP", 1)
+CreateTab("Player", 2)
+CreateTab("Items", 3)
+
+-- Логика перетягивания меню (Drag)
+local UserInputService = game:GetService("UserInputService")
+local dragging, dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseBehavior or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- Хелперы элементов интерфейса
+local function CreateToggle(parent, text, callback)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, -10, 0, 40)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = parent
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.Text = text
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.Font = Enum.Font.SourceSans
+    Label.TextSize = 18
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.BackgroundTransparency = 1
+    Label.Parent = Frame
+    
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(0, 60, 0, 30)
+    Button.Position = UDim2.new(1, -60, 0.5, -15)
+    Button.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+    Button.Text = "OFF"
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 14
+    Button.Parent = Frame
+    
+    local state = false
+    Button.MouseButton1Click:Connect(function()
+        state = not state
+        Button.Text = state and "ON" or "OFF"
+        Button.BackgroundColor3 = state and Color3.fromRGB(50, 180, 50) or Color3.fromRGB(180, 50, 50)
+        callback(state)
+    end)
+end
+
+-- Переменные состояний контуров автоматизации
+local State = {
+    ESPPiggy = false,
+    ESPSurvivals = false,
+    Noclip = false,
+    WalkSpeed = 16
+}
+
+-- Раздел 1: ESP
+local ESPElements = {}
+
+local function ApplyESP(object, color)
+    if not object:FindFirstChild("MornESP") then
+        local Highlight = Instance.new("Highlight")
+        Highlight.Name = "MornESP"
+        Highlight.FillColor = color
+        Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        Highlight.FillTransparency = 0.5
+        Highlight.OutlineTransparency = 0
+        Highlight.Adornee = object
+        Highlight.Parent = object
+        table.insert(ESPElements, Highlight)
+    end
+end
+
+local function ClearESP()
+    for i = #ESPElements, 1, -1 do
+        if ESPElements[i] then
+            ESPElements[i]:Destroy()
+        end
+        table.remove(ESPElements, i)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not State.ESPPiggy and not State.ESPSurvivals then return end
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local isPiggy = false
+            
+            -- Проверка на то, является ли игрок Piggy
+            if p.Character:FindFirstChild("Piggy") or p:GetAttribute("IsPiggy") == true or Workspace:FindFirstChild("Piggy") == p.Character then
+                isPiggy = true
+            end
+            
+            -- Дополнительная проверка по специфическим моделям ботов Piggy в Workspace
+            for _, obj in pairs(Workspace:GetChildren()) do
+                if obj:IsA("Model") and (obj.Name == "Piggy" or obj:FindFirstChild("Piggy")) then
+                    ApplyESP(obj, Color3.fromRGB(255, 0, 0))
+                end
+            end
+
+            if isPiggy and State.ESPPiggy then
+                ApplyESP(p.Character, Color3.fromRGB(255, 0, 0))
+            elseif not isPiggy and State.ESPSurvivals then
+                ApplyESP(p.Character, Color3.fromRGB(0, 255, 0))
+            end
+        end
+    end
+end)
+
+CreateToggle(Pages.ESP, "ESP Piggy", function(val)
+    State.ESPPiggy = val
+    if not val then ClearESP() end
+end)
+
+CreateToggle(Pages.ESP, "ESP Survivals", function(val)
+    State.ESPSurvivals = val
+    if not val then ClearESP() end
+end)
+
+
+-- Раздел 2: Player
+local WSFrame = Instance.new("Frame")
+WSFrame.Size = UDim2.new(1, -10, 0, 40)
+WSFrame.BackgroundTransparency = 1
+WSFrame.Parent = Pages.Player
+
+local WSLabel = Instance.new("TextLabel")
+WSLabel.Size = UDim2.new(0.5, 0, 1, 0)
+WSLabel.Text = "Walkspeed ввод:"
+WSLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+WSLabel.Font = Enum.Font.SourceSans
+WSLabel.TextSize = 18
+WSLabel.TextXAlignment = Enum.TextXAlignment.Left
+WSLabel.BackgroundTransparency = 1
+WSLabel.Parent = WSFrame
+
+local WSInput = Instance.new("TextBox")
+WSInput.Size = UDim2.new(0, 100, 0, 30)
+WSInput.Position = UDim2.new(1, -100, 0.5, -15)
+WSInput.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+WSInput.Text = "16"
+WSInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+WSInput.Font = Enum.Font.SourceSans
+WSInput.TextSize = 16
+WSInput.ClearTextOnFocus = false
+WSInput.Parent = WSFrame
+
+WSInput.FocusLost:Connect(function()
+    local num = tonumber(WSInput.Text)
+    if num then
+        if num > 500 then num = 500 elseif num < 16 then num = 16 end
+        State.WalkSpeed = num
+        WSInput.Text = tostring(num)
+    else
+        WSInput.Text = tostring(State.WalkSpeed)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = State.WalkSpeed
+    end
+end)
+
+CreateToggle(Pages.Player, "Noclip", function(val)
+    State.Noclip = val
+end)
+
+RunService.Stepped:Connect(function()
+    if State.Noclip and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+
+-- Раздел 3: Items
+local SelectedItem = ""
+local ItemDropdownFrame = Instance.new("ScrollingFrame")
+ItemDropdownFrame.Size = UDim2.new(1, -10, 0, 150)
+ItemDropdownFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+ItemDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ItemDropdownFrame.ScrollBarThickness = 6
+ItemDropdownFrame.Parent = Pages.Items
+
+local ItemLayout = Instance.new("UIListLayout")
+ItemLayout.Parent = ItemDropdownFrame
+ItemLayout.Padding = UDim.new(0, 5)
+
+local function ScanMapItems()
+    for _, child in pairs(ItemDropdownFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    
+    local itemsFound = {}
+    
+    -- Сканирование Workspace на наличие Tools / Предметов
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Tool") or (obj:IsA("ClickDetector") and obj.Parent and not itemsFound[obj.Parent.Name]) then
+            local targetName = obj:IsA("Tool") and obj.Name or obj.Parent.Name
+            if not itemsFound[targetName] then
+                itemsFound[targetName] = obj
+                
+                local ItemButton = Instance.new("TextButton")
+                ItemButton.Size = UDim2.new(1, -10, 0, 30)
+                ItemButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+                ItemButton.Text = targetName
+                ItemButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+                ItemButton.Font = Enum.Font.SourceSans
+                ItemButton.TextSize = 16
+                ItemButton.Parent = ItemDropdownFrame
+                
+                ItemButton.MouseButton1Click:Connect(function()
+                    SelectedItem = targetName
+                    WSLabel.Text = "Выбран: " .. SelectedItem -- Временный вывод информации
+                end)
+            end
+        end
+    end
+    ItemDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, ItemLayout.AbsoluteContentSize.Y)
+end
+
+-- Автоматическое обновление списка доступных предметов при открытии таба
+Pages.Items:GetPropertyChangedSignal("Visible"):Connect(function()
+    if Pages.Items.Visible then
+        ScanMapItems()
+    end
+end)
+
+local GiveItemFrame = Instance.new("Frame")
+GiveItemFrame.Size = UDim2.new(1, -10, 0, 40)
+GiveItemFrame.BackgroundTransparency = 1
+GiveItemFrame.Parent = Pages.Items
+
+local ActionButton = Instance.new("TextButton")
+ActionButton.Size = UDim2.new(1, 0, 0, 35)
+ActionButton.BackgroundColor3 = Color3.fromRGB(50, 100, 180)
+ActionButton.Text = "Give item (Вручить выбранный предмет)"
+ActionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ActionButton.Font = Enum.Font.SourceSansBold
+ActionButton.TextSize = 16
+ActionButton.Parent = GiveItemFrame
+
+ActionButton.MouseButton1Click:Connect(function()
+    if SelectedItem == "" then return end
+    
+    local foundTarget = nil
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if (obj:IsA("Tool") and obj.Name == SelectedItem) or (obj.Name == SelectedItem and obj:FindFirstChildOfClass("ClickDetector")) then
+            foundTarget = obj
+            break
+        end
+    end
+    
+    if foundTarget then
+        if foundTarget:IsA("Tool") then
+            foundTarget.Parent = LocalPlayer.Backpack
+        else
+            -- Если это объект с ClickDetector (дверь, ключ на полке)
+            local cd = foundTarget:FindFirstChildOfClass("ClickDetector")
+            if cd then
+                fireclickdetector(cd)
+            elseif foundTarget:IsA("Model") or foundTarget:IsA("BasePart") then
+                -- Альтернативный метод: телепортация персонажа к объекту для симуляции поднятия
+                local oldPos = LocalPlayer.Character.HumanoidRootPart.CFrame
+                LocalPlayer.Character.HumanoidRootPart.CFrame = foundTarget:GetModelCFrame() or foundTarget.CFrame
+                task.wait(0.2)
+                LocalPlayer.Character.HumanoidRootPart.CFrame = oldPos
+            end
+        end
+    end
+end)
