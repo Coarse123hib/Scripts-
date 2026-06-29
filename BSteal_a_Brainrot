@@ -1,0 +1,409 @@
+-- узел: meridian/roblox/steal_a_brainrot_delta
+-- deps: Delta Executor (Luau), CoreGui Environment
+-- параметры: UI_PIXEL_FONT (Enum.Font.Code), REFRESH_RATE (RenderStepped)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Инициализация контейнера интерфейса
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Morn_Terminal_UI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = CoreGui
+
+-- Глобальное состояние систем
+local State = {
+    ESP_Player = false,
+    ESP_Lock = false,
+    ESP_Height_Brainrot = false,
+    Inf_Jump = false,
+    Jump_Boost = false,
+    Jump_Value = 50,
+    Speed_Boost = false,
+    Speed_Value = 16,
+    Auto_Web = false,
+    Auto_Grab = false
+}
+
+-- Хранилище объектов ESP
+local ESP_Cache = {
+    Players = {},
+    Bases = {},
+    Brainrot = nil
+}
+
+-- ПИКСЕЛЬНЫЙ ШРИФТ
+local PIXEL_FONT = Enum.Font.Code
+
+-- Вспомогательная функция создания UI элементов
+local function create(className, properties)
+    local inst = Instance.new(className)
+    for k, v in pairs(properties) do
+        inst[k] = v
+    end
+    return inst
+end
+
+-- КРУГЛАЯ КНОПКА МЕНЮ
+local MainToggle = create("ImageButton", {
+    Size = UDim2.new(0, 50, 0, 50),
+    Position = UDim2.new(0, 20, 0, 20),
+    BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+    Image = "rbxassetid://6031104609", -- Иконка шестеренки/терминала
+    ScaleType = Enum.ScaleType.Fit,
+    Parent = ScreenGui
+})
+local UICorner_Toggle = create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = MainToggle })
+local UIBorder_Toggle = create("UIStroke", { Color = Color3.fromRGB(0, 170, 255), Thickness = 2, Parent = MainToggle })
+
+-- ОСНОВНАЯ ГОРИЗОНТАЛЬНАЯ ПАНЕЛЬ
+local MainPanel = create("Frame", {
+    Size = UDim2.new(0, 650, 0, 320),
+    Position = UDim2.new(0.5, -325, 0.5, -160),
+    BackgroundColor3 = Color3.fromRGB(15, 15, 15),
+    Visible = false,
+    Active = true,
+    Draggable = true,
+    Parent = ScreenGui
+})
+local UICorner_Panel = create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = MainPanel })
+local UIBorder_Panel = create("UIStroke", { Color = Color3.fromRGB(40, 40, 40), Thickness = 1, Parent = MainPanel })
+
+-- Заголовок панели
+local Title = create("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+    Text = "  MORN TERMINAL // STEAL A BRAINROT",
+    TextColor3 = Color3.fromRGB(0, 170, 255),
+    TextSize = 14,
+    Font = PIXEL_FONT,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = MainPanel
+})
+
+-- Переключение видимости панели
+MainToggle.MouseButton1Click:Connect(function()
+    MainPanel.Visible = not MainPanel.Visible
+end)
+
+-- Контейнер для вкладок (Слева)
+local TabButtons = create("Frame", {
+    Size = UDim2.new(0, 120, 1, -30),
+    Position = UDim2.new(0, 0, 0, 30),
+    BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+    Parent = MainPanel
+})
+
+-- Контейнер для контента (Справа)
+local ContentContainer = create("Frame", {
+    Size = UDim2.new(1, -130, 1, -40),
+    Position = UDim2.new(0, 125, 0, 35),
+    BackgroundTransparency = 1,
+    Parent = MainPanel
+})
+
+local Tabs = {}
+local TabPanels = {}
+
+local function CreateTab(name)
+    local panel = create("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        CanvasSize = UDim2.new(0, 0, 2, 0),
+        ScrollBarThickness = 2,
+        Visible = false,
+        Parent = ContentContainer
+    })
+    local layout = create("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8), Parent = panel })
+    
+    local button = create("TextButton", {
+        Size = UDim2.new(1, -10, 0, 35),
+        BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+        Text = name,
+        TextColor3 = Color3.fromRGB(200, 200, 200),
+        Font = PIXEL_FONT,
+        TextSize = 14,
+        Parent = TabButtons
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = button })
+    
+    button.MouseButton1Click:Connect(function()
+        for _, p in pairs(TabPanels) do p.Visible = false end
+        for _, b in pairs(Tabs) do b.TextColor3 = Color3.fromRGB(200, 200, 200) b.BackgroundColor3 = Color3.fromRGB(25, 25, 25) end
+        panel.Visible = true
+        button.TextColor3 = Color3.fromRGB(0, 170, 255)
+        button.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    end)
+    
+    table.insert(Tabs, button)
+    table.insert(TabPanels, panel)
+    return panel
+end
+
+local Tab_ESP = CreateTab("ESP")
+local Tab_Player = CreateTab("PLAYER")
+local Tab_Auto = CreateTab("AUTO")
+
+-- Дефолтный выбор первой вкладки
+if Tabs[1] then
+    Tabs[1].TextColor3 = Color3.fromRGB(0, 170, 255)
+    Tabs[1].BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    TabPanels[1].Visible = true
+end
+
+-- Шаблон UI элемента: Переключатель (Toggle)
+local function AddToggle(parent, text, stateKey, callback)
+    local frame = create("Frame", { Size = UDim2.new(1, -10, 0, 40), BackgroundColor3 = Color3.fromRGB(22, 22, 22), Parent = parent })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = frame })
+    
+    local label = create("TextLabel", {
+        Size = UDim2.new(0.7, 0, 1, 0), Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1, Text = text, TextColor3 = Color3.fromRGB(230, 230, 230),
+        Font = PIXEL_FONT, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, Parent = frame
+    })
+    
+    local switch = create("TextButton", {
+        Size = UDim2.new(0, 45, 0, 22), Position = UDim2.new(1, -55, 0.5, -11),
+        BackgroundColor3 = State[stateKey] and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(40, 40, 40),
+        Text = "", Parent = frame
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 11), Parent = switch })
+    
+    switch.MouseButton1Click:Connect(function()
+        State[stateKey] = not State[stateKey]
+        switch.BackgroundColor3 = State[stateKey] and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(40, 40, 40)
+        if callback then callback(State[stateKey]) end
+    end)
+end
+
+-- Шаблон UI элемента: Поле ввода (Input)
+local function AddInput(parent, labelText, defaultValue, min, max, callback)
+    local frame = create("Frame", { Size = UDim2.new(1, -10, 0, 40), BackgroundColor3 = Color3.fromRGB(22, 22, 22), Parent = parent })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = frame })
+    
+    local label = create("TextLabel", {
+        Size = UDim2.new(0.6, 0, 1, 0), Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1, Text = labelText, TextColor3 = Color3.fromRGB(18, 180, 180),
+        Font = PIXEL_FONT, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = frame
+    })
+    
+    local input = create("TextBox", {
+        Size = UDim2.new(0, 70, 0, 26), Position = UDim2.new(1, -80, 0.5, -13),
+        BackgroundColor3 = Color3.fromRGB(30, 30, 30), Text = tostring(defaultValue),
+        TextColor3 = Color3.fromRGB(255, 255, 255), Font = PIXEL_FONT, TextSize = 14, Parent = frame
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = input })
+    
+    input.FocusLost:Connect(function()
+        local val = tonumber(input.Text)
+        if val then
+            val = math.clamp(val, min, max)
+            input.Text = tostring(val)
+            callback(val)
+        else
+            input.Text = tostring(defaultValue)
+        end
+    end)
+end
+
+-- ==========================================
+-- НАПОЛНЕНИЕ ВКЛАДКИ ESP
+-- ==========================================
+AddToggle(Tab_ESP, "ESP PLAYER (Синий хитбокс)", "ESP_Player")
+AddToggle(Tab_ESP, "ESP LOCK (Таймер базы)", "ESP_Lock")
+AddToggle(Tab_ESP, "ESP HEIGHT BRAINROT (Топ доход)", "ESP_Height_Brainrot")
+
+-- ==========================================
+-- НАПОЛНЕНИЕ ВКЛАДКИ PLAYER
+-- ==========================================
+AddToggle(Tab_Player, "INFINITY JUMP", "Inf_Jump")
+AddToggle(Tab_Player, "JUMP BOOST", "Jump_Boost", function(v)
+    if not v and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = 50
+    end
+end)
+AddInput(Tab_Player, "   └─ Значение прыжка (21-100)", 50, 21, 100, function(v)
+    State.Jump_Value = v
+end)
+
+AddToggle(Tab_Player, "SPEEDBOOST", "Speed_Boost", function(v)
+    if not v and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+    end
+end)
+AddInput(Tab_Player, "   └─ Значение скорости (16-300)", 16, 16, 300, function(v)
+    State.Speed_Value = v
+end)
+
+-- ==========================================
+-- НАПОЛНЕНИЕ ВКЛАДКИ AUTO
+-- ==========================================
+AddToggle(Tab_Auto, "AUTOWEB (Auto-Aim Web Slinger)", "Auto_Web")
+AddToggle(Tab_Auto, "AUTOGRAB (Авто-кража предметов [E])", "Auto_Grab")
+
+
+-- ==========================================
+-- РАБОЧИЕ ИСПОЛНИТЕЛЬНЫЕ КОНТУРЫ (ЯДРО ХАКОВ)
+-- ==========================================
+
+-- Очистка ESP
+local function clearESP()
+    for _, v in pairs(ESP_Cache.Players) do if v then v:Destroy() end end
+    for _, v in pairs(ESP_Cache.Bases) do if v then v:Destroy() end end
+    if ESP_Cache.Brainrot then ESP_Cache.Brainrot:Destroy() ESP_Cache.Brainrot = nil end
+    ESP_Cache.Players = {}
+    ESP_Cache.Bases = {}
+end
+
+-- Основной цикл рендеринга и вычислений
+RunService.RenderStepped:Connect(function()
+    -- Обработка PLAYER контуров
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        
+        if State.Speed_Boost then
+            hum.WalkSpeed = State.Speed_Value
+        end
+        
+        if State.Jump_Boost then
+            hum.UseJumpPower = true
+            hum.JumpPower = State.Jump_Value
+        end
+    end
+    
+    -- Очистка старых маркеров перед обновлением кадра
+    clearESP()
+    
+    -- Исполнение ESP PLAYER
+    if State.ESP_Player then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = p.Character.HumanoidRootPart
+                local box = create("BoxHandleAdornment", {
+                    Size = hrp.Size + Vector3.new(1, 2, 1),
+                    AlwaysOnTop = true,
+                    ZIndex = 5,
+                    Color3 = Color3.fromRGB(0, 100, 255),
+                    Transparency = 0.6,
+                    Adornee = hrp,
+                    Parent = ScreenGui
+                })
+                table.insert(ESP_Cache.Players, box)
+            end
+        end
+    end
+    
+    -- Исполнение ESP LOCK (Поиск таймеров на базах)
+    if State.ESP_Lock then
+        -- Парсинг папки баз (структура зависит от плейса, сканируем Workspace Tycoons/Bases)
+        local basesFolder = workspace:FindFirstChild("Bases") or workspace:FindFirstChild("Tycoons") or workspace
+        for _, base in pairs(basesFolder:GetChildren()) do
+            -- Эвристический поиск таймера или элемента базы
+            local timerNode = base:FindFirstChild("Timer") or base:FindFirstChild("Time") or base:FindFirstChild("Essential")
+            if timerNode and (timerNode:IsA("BasePart") or timerNode:IsA("Model")) then
+                local part = timerNode:IsA("Model") and timerNode.PrimaryPart or timerNode
+                if part then
+                    -- Извлечение текстового значения таймера (если есть StringValue/IntValue или TextLabel)
+                    local secondsLeft = "Active"
+                    local val = timerNode:FindFirstChildOfClass("IntValue") or timerNode:FindFirstChildOfClass("StringValue")
+                    if val then secondsLeft = tostring(val.Value) end
+                    
+                    local billboard = create("BillboardGui", {
+                        Size = UDim2.new(0, 100, 0, 30),
+                        AlwaysOnTop = true,
+                        Adornee = part,
+                        ExtentsOffset = Vector3.new(0, 3, 0),
+                        Parent = ScreenGui
+                    })
+                    local text = create("TextLabel", {
+                        Size = UDim2.new(1, 0, 1, 0),
+                        BackgroundTransparency = 1,
+                        Text = "BASE TIMER: " .. secondsLeft .. "s",
+                        TextColor3 = Color3.fromRGB(255, 85, 85),
+                        Font = PIXEL_FONT,
+                        TextSize = 12,
+                        Parent = billboard
+                    })
+                    table.insert(ESP_Cache.Bases, billboard)
+                end
+            end
+        end
+    end
+    
+    -- Исполнение ESP HEIGHT BRAINROT (Поиск самого прибыльного объекта)
+    if State.ESP_Height_Brainrot then
+        local highestIncome = -1
+        local targetBrainrot = nil
+        
+        -- Поиск в Workspace (сканируем объекты, которые спавнятся)
+        local itemsFolder = workspace:FindFirstChild("Brainrots") or workspace:FindFirstChild("DroppedItems") or workspace
+        for _, item in pairs(itemsFolder:GetChildren()) do
+            -- Поиск переменных дохода в объекте
+            local incomeVal = item:FindFirstChild("Income") or item:FindFirstChild("Value") or item:FindFirstChild("Profit")
+            if incomeVal and incomeVal:IsA("ValueBase") then
+                if incomeVal.Value > highestIncome then
+                    highestIncome = incomeVal.Value
+                    targetBrainrot = item
+                end
+            end
+        end
+        
+        if targetBrainrot and targetBrainrot:IsA("BasePart") then
+            local billboard = create("BillboardGui", {
+                Size = UDim2.new(0, 150, 0, 40),
+                AlwaysOnTop = true,
+                Adornee = targetBrainrot,
+                ExtentsOffset = Vector3.new(0, 4, 0),
+                Parent = ScreenGui
+            })
+            local label = create("TextLabel", {
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = string.format("%s\n+%s/sec", targetBrainrot.Name, tostring(highestIncome)),
+                TextColor3 = Color3.fromRGB(85, 255, 85),
+                Font = PIXEL_FONT,
+                TextSize = 13,
+                Parent = billboard
+            })
+            local box = create("BoxHandleAdornment", {
+                Size = targetBrainrot.Size + Vector3.new(0.5, 0.5, 0.5),
+                AlwaysOnTop = true,
+                ZIndex = 4,
+                Color3 = Color3.fromRGB(85, 255, 85),
+                Transparency = 0.5,
+                Adornee = targetBrainrot,
+                Parent = billboard
+            })
+            ESP_Cache.Brainrot = billboard
+        end
+    end
+end)
+
+-- Исполнение INFINITY JUMP (Обход детекта через прямое изменение состояния)
+UserInputService.JumpRequest:Connect(function()
+    if State.Inf_Jump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- Исполнение AUTOWEB (Фиксация Web Slinger на ближайшей цели)
+task.spawn(function()
+    while task.wait(0.1) do
+        if State.Auto_Web then
+            local weapon = LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("Web Slinger") or LocalPlayer.Backpack:FindFirstChild("Web Slinger"))
+            if weapon then
+                -- Поиск ближайшего игрока
+                local nearestPlayer = nil
+                local minDistance = math.huge
+                
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        local dist = (LocalPlayer.Character.HumanoidRootPart.Position - p.Normally I can help with things like this, but I don't seem to have access to that content. You can try again or ask me for something else.
