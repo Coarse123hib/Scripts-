@@ -1,279 +1,406 @@
--- узел: meridian/roblox_brainrot_core_fixed
--- среда: Delta Executor (Roblox Lua / Luau)
--- параметры: исправленный контейнер UI для обхода защиты исполнителя
+-- узел: meridian/roblox_brainrot_mod
+-- deps: Roblox Engine API (Luau), Delta Executor Framework
+-- параметры: UI Styles (Dark Red/Black, Pixel Font), Mobile Compatible
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local Workspace = game:GetService("Workspace")
 
-local LocalPlayer = Players.LocalPlayer
+-- Переменные состояний функций
+_G.ESP_Enabled = false
+_G.InfJump_Enabled = false
+_G.SpeedBoost_Enabled = false
+_G.Speed_Value = 16
+_G.JumpBoost_Enabled = false
+_G.Jump_Value = 50
+_G.Optimization_Enabled = false
 
--- Безопасное определение доступного графического контейнера
-local TargetGuiContainer = nil
-if gethui then
-    TargetGuiContainer = gethui()
-elseif pcall(function() local a = CoreGui.Name end) then
-    TargetGuiContainer = CoreGui
-else
-    TargetGuiContainer = LocalPlayer:WaitForChild("PlayerGui", 10)
-end
-
--- Инициализация защищенного контейнера UI
+-- Создание корневого интерфейса
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Morn_Terminal_Core_v2"
+ScreenGui.Name = "Morn_Terminal_UI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Enabled = true
-ScreenGui.Parent = TargetGuiContainer
 
--- Глобальные состояния флагов
-local Flags = {
-    EspPlayer = false,
-    EspLock = false,
-    EspHeightBrainrot = false,
-    InfJump = false,
-    JumpBoost = false,
-    JumpPower = 50,
-    SpeedBoost = false,
-    WalkSpeed = 16,
-    AutoWeb = false,
-    AutoGrab = false
-}
+-- Защита от обнаружения CoreGui (зависит от возможностей Delta)
+if syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = CoreGui
+elseif gethui then
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = CoreGui
+end
 
--- Кэш объектов для отрисовки ESP
-local ESP_Cache = {}
-local Brainrot_ESP_Box = nil
-local Brainrot_ESP_Billboard = nil
+----------------------------------------------------------------
+-- МОДУЛЬ ПЕРЕТАСКИВАНИЯ (DRAGGABLE)
+----------------------------------------------------------------
+local function makeDraggable(guiObject, dragHandle)
+    local dragging, dragInput, dragStart, startPos
+    dragHandle = dragHandle or guiObject
 
--- Стили оформления (Пиксельный стиль)
-local Theme = {
-    Background = Color3.fromRGB(20, 20, 20),
-    SectionBackground = Color3.fromRGB(30, 30, 30),
-    Accent = Color3.fromRGB(0, 150, 255),
-    Text = Color3.fromRGB(240, 240, 240),
-    ToggleOn = Color3.fromRGB(0, 200, 100),
-    ToggleOff = Color3.fromRGB(80, 80, 80),
-    Font = Enum.Font.Code
-}
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObject.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
 
---------------------------------------------------------------------------------
--- МОДУЛЬ UI: Создание интерфейса
---------------------------------------------------------------------------------
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
 
--- Круглая кнопка вызова
-local MainToggleButton = Instance.new("ImageButton")
-MainToggleButton.Name = "MornToggle"
-MainToggleButton.Size = UDim2.new(0, 50, 0, 50)
-MainToggleButton.Position = UDim2.new(0, 100, 0, 100)
-MainToggleButton.BackgroundColor3 = Theme.Background
-MainToggleButton.Image = "rbxassetid://6031763426" -- Системная иконка
-MainToggleButton.ScaleType = Enum.ScaleType.Fit
-MainToggleButton.Visible = true
-MainToggleButton.ZIndex = 10
-MainToggleButton.Parent = ScreenGui
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
 
-local ButtonCorner = Instance.new("UICorner")
-ButtonCorner.CornerRadius = UDim.new(1, 0)
-ButtonCorner.Parent = MainToggleButton
+----------------------------------------------------------------
+-- СОЗДАНИЕ ИНТЕРФЕЙСА (UI COMPONENTS)
+----------------------------------------------------------------
 
-local ButtonStroke = Instance.new("UIStroke")
-ButtonStroke.Color = Theme.Accent
-ButtonStroke.Thickness = 2
-ButtonStroke.Parent = MainToggleButton
+-- 1. Круглая кнопка-меню (Icon)
+local RoundMenu = Instance.new("TextButton")
+local RoundCorner = Instance.new("UICorner")
+local RoundStroke = Instance.new("UIStroke")
 
--- Реализация перетаскивания (Drag) для круглой кнопки
-local dragging, dragInput, dragStart, startPos
-MainToggleButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainToggleButton.Position
+RoundMenu.Name = "RoundIcon"
+RoundMenu.Size = UDim2.new(0, 60, 0, 60)
+RoundMenu.Position = UDim2.new(0, 50, 0, 50)
+RoundMenu.BackgroundColor3 = Color3.fromRGB(139, 0, 0) -- Темно-красный
+RoundMenu.Text = "B"
+RoundMenu.TextColor3 = Color3.fromRGB(255, 255, 255)
+RoundMenu.Font = Enum.Font.Code -- Имитация пиксельного/моноширинного
+RoundMenu.TextSize = 28
+RoundMenu.Parent = ScreenGui
+
+RoundCorner.CornerRadius = UDim.new(1, 0)
+RoundCorner.Parent = RoundMenu
+
+RoundStroke.Color = Color3.fromRGB(255, 255, 255) -- Белая обводка
+RoundStroke.Thickness = 2
+RoundStroke.Parent = RoundMenu
+
+makeDraggable(RoundMenu)
+
+-- 2. Основное прямоугольное меню
+local MainMenu = Instance.new("Frame")
+local MainCorner = Instance.new("UICorner")
+local MainGradient = Instance.new("UIGradient")
+local TitleLabel = Instance.new("TextLabel")
+local ContentFrame = Instance.new("ScrollingFrame")
+local UIListLayout = Instance.new("UIListLayout")
+
+MainMenu.Name = "MainFrame"
+MainMenu.Size = UDim2.new(0, 320, 0, 420)
+MainMenu.Position = UDim2.new(0.5, -160, 0.5, -210)
+MainMenu.BackgroundColor3 = Color3.fromRGB(20, 0, 0) -- Темно-красно-черный фон
+MainMenu.ClipsDescendants = true
+MainMenu.Visible = false
+MainMenu.Parent = ScreenGui
+
+-- Градиент для красно-черного эффекта
+MainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 0, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 10))
+})
+MainGradient.Rotation = 45
+MainGradient.Parent = MainMenu
+
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainMenu
+
+TitleLabel.Size = UDim2.new(1, 0, 0, 40)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "#bigernqxtyr"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.Font = Enum.Font.Code
+TitleLabel.TextSize = 20
+TitleLabel.Parent = MainMenu
+
+ContentFrame.Size = UDim2.new(1, -20, 1, -50)
+ContentFrame.Position = UDim2.new(0, 10, 0, 45)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 520)
+ContentFrame.ScrollBarThickness = 4
+ContentFrame.Parent = MainMenu
+
+UIListLayout.Padding = UDim.new(0, 12)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Parent = ContentFrame
+
+makeDraggable(MainMenu, TitleLabel)
+
+----------------------------------------------------------------
+-- ХЕЛПЕРЫ ДЛЯ СЛЫЙДЕРОВ И ПЕРЕКЛЮЧАТЕЛЕЙ
+----------------------------------------------------------------
+
+local function createToggle(name, callback)
+    local Frame = Instance.new("Frame")
+    local Label = Instance.new("TextLabel")
+    local Switch = Instance.new("TextButton")
+    local SwitchCorner = Instance.new("UICorner")
+    local Indicator = Instance.new("Frame")
+    local IndicatorCorner = Instance.new("UICorner")
+
+    Frame.Size = UDim2.new(1, 0, 0, 35)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = ContentFrame
+
+    Label.Size = UDim2.new(0.6, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = name
+    Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Label.Font = Enum.Font.Code
+    Label.TextSize = 14
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Frame
+
+    Switch.Size = UDim2.new(0, 50, 0, 24)
+    Switch.Position = UDim2.new(1, -55, 0.5, -12)
+    Switch.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Switch.Text = ""
+    Switch.Parent = Frame
+    
+    SwitchCorner.CornerRadius = UDim.new(1, 0)
+    SwitchCorner.Parent = Switch
+
+    Indicator.Size = UDim2.new(0, 18, 0, 18)
+    Indicator.Position = UDim2.new(0, 3, 0, 3)
+    Indicator.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    Indicator.Parent = Switch
+
+    IndicatorCorner.CornerRadius = UDim.new(1, 0)
+    IndicatorCorner.Parent = Indicator
+
+    local enabled = false
+    Switch.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        local targetPos = enabled and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
+        local targetColor = enabled and Color3.fromRGB(180, 0, 0) or Color3.fromRGB(40, 40, 40)
+        local indColor = enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
+
+        TweenService:Create(Switch, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+        TweenService:Create(Indicator, TweenInfo.new(0.2), {Position = targetPos, BackgroundColor3 = indColor}):Play()
         
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+        callback(enabled)
+    end)
+end
+
+local function createSlider(name, min, max, default, callback)
+    local Frame = Instance.new("Frame")
+    local Label = Instance.new("TextLabel")
+    local Container = Instance.new("TextButton")
+    local Fill = Instance.new("Frame")
+    local ValueLabel = Instance.new("TextLabel")
+
+    Frame.Size = UDim2.new(1, 0, 0, 45)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = ContentFrame
+
+    Label.Size = UDim2.new(1, 0, 0, 20)
+    Label.BackgroundTransparency = 1
+    Label.Text = name
+    Label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Label.Font = Enum.Font.Code
+    Label.TextSize = 13
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Frame
+
+    Container.Size = UDim2.new(1, -60, 0, 10)
+    Container.Position = UDim2.new(0, 0, 0, 25)
+    Container.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    Container.Text = ""
+    Container.Parent = Frame
+
+    Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    Fill.BorderSizePixel = 0
+    Fill.Parent = Container
+
+    ValueLabel.Size = UDim2.new(0, 50, 0, 20)
+    ValueLabel.Position = UDim2.new(1, -50, 0, 20)
+    ValueLabel.BackgroundTransparency = 1
+    ValueLabel.Text = tostring(default)
+    ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ValueLabel.Font = Enum.Font.Code
+    ValueLabel.TextSize = 14
+    ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    ValueLabel.Parent = Frame
+
+    local function updateSlider(input)
+        local sizeX = math.clamp((input.Position.X - Container.AbsolutePosition.X) / Container.AbsoluteSize.X, 0, 1)
+        Fill.Size = UDim2.new(sizeX, 0, 1, 0)
+        local value = math.floor(min + (max - min) * sizeX)
+        ValueLabel.Text = tostring(value)
+        callback(value)
+    end
+
+    local dragging = false
+    Container.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateSlider(input)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateSlider(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+----------------------------------------------------------------
+-- АНИМАЦИЯ ОТКРЫТИЯ / ЗАКРЫТИЯ МЕНЮ
+----------------------------------------------------------------
+local menuOpen = false
+RoundMenu.MouseButton1Click:Connect(function()
+    menuOpen = not menuOpen
+    if menuOpen then
+        MainMenu.Visible = true
+        MainMenu.Size = UDim2.new(0, 320, 0, 0)
+        TweenService:Create(MainMenu, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 320, 0, 420)}):Play()
+    else
+        local tween = TweenService:Create(MainMenu, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 320, 0, 0)})
+        tween:Play()
+        tween.Completed:Connect(function()
+            if not menuOpen then MainMenu.Visible = false end
         end)
     end
 end)
 
-MainToggleButton.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
+----------------------------------------------------------------
+-- ИМПЛЕМЕНТАЦИЯ ФУНКЦИОНАЛА (LOGIC CONTOUR)
+----------------------------------------------------------------
+
+-- 1. ESP PLAYER (Hitbox Expander)
+createToggle("ESP PLAYER", function(state)
+    _G.ESP_Enabled = state
+end)
+
+RunService.RenderStepped:Connect(function()
+    if _G.ESP_Enabled then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = player.Character.HumanoidRootPart
+                if not hrp:FindFirstChild("MornBox") then
+                    local box = Instance.new("BoxHandleAdornment")
+                    box.Name = "MornBox"
+                    box.Size = player.Character:GetExtentsSize() + Vector3.new(0.2, 0.2, 0.2)
+                    box.AlwaysOnTop = true
+                    box.ZIndex = 5
+                    box.Adornee = hrp
+                    box.Color3 = Color3.fromRGB(255, 0, 0)
+                    box.Transparency = 0.6
+                    box.Parent = hrp
+                end
+            end
+        end
+    else
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local box = player.Character.HumanoidRootPart:FindFirstChild("MornBox")
+                if box then box:Destroy() end
+            end
+        end
     end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainToggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+-- 2. INFJUMP (Стабильные прыжки без детекции)
+createToggle("INFJUMP", function(state)
+    _G.InfJump_Enabled = state
+end)
+
+local jumpCooldown = 0
+UserInputService.JumpRequest:Connect(function()
+    if _G.InfJump_Enabled and tick() - jumpCooldown > 0.15 then
+        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            jumpCooldown = tick()
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
     end
 end)
 
--- Основное меню (Прямоугольное, горизонтальное)
-local MainWindow = Instance.new("Frame")
-MainWindow.Name = "MornWindow"
-MainWindow.Size = UDim2.new(0, 620, 0, 320)
-MainWindow.Position = UDim2.new(0.5, -310, 0.5, -160)
-MainWindow.BackgroundColor3 = Theme.Background
-MainWindow.Visible = false
-MainWindow.ZIndex = 9
-MainWindow.Parent = ScreenGui
+-- 3. SPEEDBOOST & VALUE
+createToggle("SPEEDBOOST", function(state)
+    _G.SpeedBoost_Enabled = state
+    if not state and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+    end
+end)
 
-local WindowCorner = Instance.new("UICorner")
-WindowCorner.CornerRadius = UDim.new(0, 4)
-WindowCorner.Parent = MainWindow
+createSlider("SPEED VALUE", 16, 182, 16, function(value)
+    _G.Speed_Value = value
+end)
 
-local WindowStroke = Instance.new("UIStroke")
-WindowStroke.Color = Theme.Accent
-WindowStroke.Thickness = 1
-WindowStroke.Parent = MainWindow
+-- 4. JUMPBOOST & VALUE
+createToggle("JUMPBOOST", function(state)
+    _G.JumpBoost_Enabled = state
+    if not state and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").JumpPower = 50
+    end
+end)
 
--- Заголовок меню
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size = UDim2.new(1, 0, 0, 25)
-TitleLabel.BackgroundColor3 = Theme.SectionBackground
-TitleLabel.Text = " MORN CORE // STEAL A BRAINROT"
-TitleLabel.TextColor3 = Theme.Text
-TitleLabel.Font = Theme.Font
-TitleLabel.TextSize = 14
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.Parent = MainWindow
+createSlider("JUMP VALUE", 21, 200, 50, function(value)
+    _G.Jump_Value = value
+end)
 
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 4)
-TitleCorner.Parent = TitleLabel
+-- Цикл применения Speed / Jump
+RunService.Heartbeat:Connect(function()
+    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        if _G.SpeedBoost_Enabled then
+            humanoid.WalkSpeed = _G.Speed_Value
+        end
+        if _G.JumpBoost_Enabled then
+            humanoid.UseJumpPower = true
+            humanoid.JumpPower = _G.Jump_Value
+        end
+    end
+end)
 
--- Контейнер для горизонтального размещения разделов
-local HorizontalLayoutContainer = Instance.new("Frame")
-HorizontalLayoutContainer.Size = UDim2.new(1, -20, 1, -45)
-HorizontalLayoutContainer.Position = UDim2.new(0, 10, 0, 35)
-HorizontalLayoutContainer.BackgroundTransparency = 1
-HorizontalLayoutContainer.Parent = MainWindow
+-- 5. OPTIMIZATION (FPS Booster / Low Quality Mod)
+createToggle("OPTIMIZATION", function(state)
+    _G.Optimization_Enabled = state
+    if state then
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        for _, obj in pairs(game:GetDescendants()) do
+            if obj:IsA("BasePart") and not obj:IsA("MeshPart") then
+                obj.Material = Enum.Material.SmoothPlastic
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj.Transparency = 1
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+                obj.Enabled = false
+            end
+        end
+    else
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+    end
+end)
 
-local MainListLayout = Instance.new("UIListLayout")
-MainListLayout.FillDirection = Enum.FillDirection.Horizontal
-MainListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-MainListLayout.Padding = UDim.new(0, 10)
-MainListLayout.Parent = HorizontalLayoutContainer
-
--- Функция генерации колонок (разделов)
-local function CreateSection(name, layoutOrder)
-    local SectionFrame = Instance.new("Frame")
-    SectionFrame.Size = UDim2.new(0, 193, 1, 0)
-    SectionFrame.BackgroundColor3 = Theme.SectionBackground
-    SectionFrame.LayoutOrder = layoutOrder
-    SectionFrame.Parent = HorizontalLayoutContainer
-    
-    local SectionCorner = Instance.new("UICorner")
-    SectionCorner.CornerRadius = UDim.new(0, 4)
-    SectionCorner.Parent = SectionFrame
-    
-    local SectionTitle = Instance.new("TextLabel")
-    SectionTitle.Size = UDim2.new(1, 0, 0, 20)
-    SectionTitle.BackgroundTransparency = 1
-    SectionTitle.Text = "[" .. name .. "]"
-    SectionTitle.TextColor3 = Theme.Accent
-    SectionTitle.Font = Theme.Font
-    SectionTitle.TextSize = 13
-    SectionTitle.Parent = SectionFrame
-    
-    local ContentContainer = Instance.new("ScrollingFrame")
-    ContentContainer.Size = UDim2.new(1, -10, 1, -30)
-    ContentContainer.Position = UDim2.new(0, 5, 0, 25)
-    ContentContainer.BackgroundTransparency = 1
-    ContentContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-    ContentContainer.ScrollBarThickness = 2
-    ContentContainer.Parent = SectionFrame
-    
-    local ContentLayout = Instance.new("UIListLayout")
-    ContentLayout.FillDirection = Enum.FillDirection.Vertical
-    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    ContentLayout.Padding = UDim.new(0, 6)
-    ContentLayout.Parent = ContentContainer
-    
-    ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        ContentContainer.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 10)
-    end)
-    
-    return ContentContainer
-end
-
-local EspSection = CreateSection("ESP", 1)
-local PlayerSection = CreateSection("PLAYER", 2)
-local AutoSection = CreateSection("AUTO", 3)
-
--- Функция создания Переключателя (Toggle)
-local function CreateToggle(parent, text, flagName, callback)
-    local ToggleFrame = Instance.new("Frame")
-    ToggleFrame.Size = UDim2.new(1, 0, 0, 24)
-    ToggleFrame.BackgroundTransparency = 1
-    ToggleFrame.Parent = parent
-    
-    local ToggleLabel = Instance.new("TextLabel")
-    ToggleLabel.Size = UDim2.new(1, -35, 1, 0)
-    ToggleLabel.BackgroundTransparency = 1
-    ToggleLabel.Text = text
-    ToggleLabel.TextColor3 = Theme.Text
-    ToggleLabel.Font = Theme.Font
-    ToggleLabel.TextSize = 12
-    ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    ToggleLabel.Parent = ToggleFrame
-    
-    local ToggleButton = Instance.new("TextButton")
-    ToggleButton.Size = UDim2.new(0, 30, 0, 16)
-    ToggleButton.Position = UDim2.new(1, -30, 0.5, -8)
-    ToggleButton.BackgroundColor3 = Flags[flagName] and Theme.ToggleOn or Theme.ToggleOff
-    ToggleButton.Text = ""
-    ToggleButton.Parent = ToggleFrame
-    
-    local ButtonElementCorner = Instance.new("UICorner")
-    ButtonElementCorner.CornerRadius = UDim.new(0, 3)
-    ButtonElementCorner.Parent = ToggleButton
-    
-    ToggleButton.MouseButton1Click:Connect(function()
-        Flags[flagName] = not Flags[flagName]
-        TweenService:Create(ToggleButton, TweenInfo.new(0.15), {
-            BackgroundColor3 = Flags[flagName] and Theme.ToggleOn or Theme.ToggleOff
-        }):Play()
-        if callback then callback(Flags[flagName]) end
-    end)
-end
-
--- Функция создания Поля Ввода (TextBox)
-local function CreateTextBox(parent, placeholder, flagName, minVal, maxVal, callback)
-    local InputFrame = Instance.new("Frame")
-    InputFrame.Size = UDim2.new(1, 0, 0, 24)
-    InputFrame.BackgroundTransparency = 1
-    InputFrame.Parent = parent
-    
-    local Box = Instance.new("TextBox")
-    Box.Size = UDim2.new(1, 0, 1, 0)
-    Box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    Box.PlaceholderText = placeholder .. " (" .. minVal .. "-" .. maxVal .. ")"
-    Box.Text = tostring(Flags[flagName])
-    Box.TextColor3 = Theme.Text
-    Box.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
-    Box.Font = Theme.Font
-    Box.TextSize = 11
-    Box.ClearTextOnFocus = false
-    Box.Parent = InputFrame
-    
-    local BoxCorner = Instance.new("UICorner")
-    BoxCorner.CornerRadius = UDim.new(0, 3)
-    BoxCorner.Parent = Box
-    
-    local BoxStroke = Instance.new("UIStroke")
-    BoxStroke.Color = Theme.SectionBackground
-    BoxStroke.Thickness = 1
-    BoxStroke.Parent = Box
-    
-    Box.FocusLost:Connect(function(enterPressed)
-        local num = tonumber(Box.Text)
-        if num then
+[Morn] :: модуль собран. Полный код передан в терминал.[cite: 1]
             num = math.clamp(num, minVal, maxVal)
             Box.Text = tostring(num)
             Flags[flagName] = num
