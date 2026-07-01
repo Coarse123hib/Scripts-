@@ -1,0 +1,636 @@
+--[[
+    MORN :: meridian/operator_piggy_chits
+    Зависимости: Roblox Lua (LocalScript)
+    Параметры: корректируйте имена Piggy/предметов при необходимости
+    Идеи для читов (см. в конце скрипта)
+--]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui") -- или game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- ====================== CONFIG ======================
+local PIGGY_NAME = "Piggy"          -- имя модели главного Piggy
+local BOT_PIGGY_NAME = "BotPiggy"   -- имя модели бота Piggy (подкорректировать)
+local ITEM_KEYWORDS = {"Key", "Wrench", "Battery", "Gear", "Tool", "Item"} -- части имён предметов
+
+-- ====================== GUI SETUP ======================
+local MornGui = Instance.new("ScreenGui")
+MornGui.Name = "MornHub"
+MornGui.ResetOnSpawn = false
+MornGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Круглая кнопка (триггер)
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(0, 60, 0, 60)
+ToggleButton.Position = UDim2.new(1, -80, 0, 20)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Image = "rbxassetid://6885183706" -- иконка круга (можно заменить на свою)
+ToggleButton.ImageColor3 = Color3.fromRGB(200, 200, 200)
+ToggleButton.Parent = MornGui
+
+-- Круглая форма через UICorner (радиус = половина размера)
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0) -- полностью круглый
+corner.Parent = ToggleButton
+
+-- Главное меню (прямоугольное)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 480, 0, 380)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.Parent = MornGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainFrame
+
+-- Заголовок
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundTransparency = 1
+Title.Text = "MORN // Operator Panel"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+Title.Parent = MainFrame
+
+-- Вкладки
+local TabFrame = Instance.new("Frame")
+TabFrame.Name = "TabFrame"
+TabFrame.Size = UDim2.new(1, 0, 0, 35)
+TabFrame.Position = UDim2.new(0, 0, 0, 35)
+TabFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TabFrame.BorderSizePixel = 0
+TabFrame.Parent = MainFrame
+
+local TabCorner = Instance.new("UICorner")
+TabCorner.CornerRadius = UDim.new(0, 6)
+TabCorner.Parent = TabFrame
+
+-- Контентная область
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Size = UDim2.new(1, 0, 1, -70)
+ContentFrame.Position = UDim2.new(0, 0, 0, 70)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ContentFrame.BorderSizePixel = 0
+ContentFrame.Parent = MainFrame
+
+local ContentCorner = Instance.new("UICorner")
+ContentCorner.CornerRadius = UDim.new(0, 6)
+ContentCorner.Parent = ContentFrame
+
+-- Функция переключения вкладок
+local tabs = {}
+local function SwitchTab(tabName)
+    for _, tab in pairs(tabs) do
+        tab.Visible = false
+    end
+    if tabs[tabName] then
+        tabs[tabName].Visible = true
+    end
+end
+
+-- Создание вкладок
+local function CreateTabButton(name, tabName)
+    local btn = Instance.new("TextButton")
+    btn.Name = name .. "Tab"
+    btn.Size = UDim2.new(0.5, -5, 1, 0)
+    btn.Position = tabName == "CHITS" and UDim2.new(0, 5, 0, 0) or UDim2.new(0.5, 0, 0, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 16
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = TabFrame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        SwitchTab(tabName)
+        btn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+        -- подсветка активной вкладки (сброс остальных)
+        for _, otherBtn in ipairs(TabFrame:GetChildren()) do
+            if otherBtn:IsA("TextButton") and otherBtn ~= btn then
+                otherBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+            end
+        end
+    end)
+    return btn
+end
+
+local chitsTabBtn = CreateTabButton("CHITS", "CHITS")
+local espTabBtn = CreateTabButton("ESP", "ESP")
+
+-- Создание контейнеров вкладок
+local chitsFrame = Instance.new("ScrollingFrame")
+chitsFrame.Name = "CHITS"
+chitsFrame.Size = UDim2.new(1, 0, 1, 0)
+chitsFrame.BackgroundTransparency = 1
+chitsFrame.ScrollBarThickness = 6
+chitsFrame.CanvasSize = UDim2.new(0, 0, 0, 600)
+chitsFrame.Parent = ContentFrame
+tabs["CHITS"] = chitsFrame
+
+local espFrame = Instance.new("ScrollingFrame")
+espFrame.Name = "ESP"
+espFrame.Size = UDim2.new(1, 0, 1, 0)
+espFrame.BackgroundTransparency = 1
+espFrame.ScrollBarThickness = 6
+espFrame.CanvasSize = UDim2.new(0, 0, 0, 400)
+espFrame.Visible = false
+espFrame.Parent = ContentFrame
+tabs["ESP"] = espFrame
+
+-- ====================== Вспомогательные функции ======================
+local function CreateToggle(parent, name, callback)
+    local frame = Instance.new("Frame")
+    frame.Name = name .. "Toggle"
+    frame.Size = UDim2.new(1, -10, 0, 40)
+    frame.Position = UDim2.new(0, 5, 0, 0) -- будет сдвинуто позже
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local fCorner = Instance.new("UICorner")
+    fCorner.CornerRadius = UDim.new(0, 6)
+    fCorner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.75, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 16
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0, 40, 0, 25)
+    toggleBtn.Position = UDim2.new(1, -50, 0.5, -12)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60) -- выключен (красный)
+    toggleBtn.Text = ""
+    toggleBtn.BorderSizePixel = 0
+    toggleBtn.AutoButtonColor = false
+    toggleBtn.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 12)
+    btnCorner.Parent = toggleBtn
+
+    local enabled = false
+    toggleBtn.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(60, 180, 60) or Color3.fromRGB(180, 60, 60)
+        callback(enabled)
+    end)
+    return frame
+end
+
+local function CreateSlider(parent, name, minVal, maxVal, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Name = name .. "Slider"
+    frame.Size = UDim2.new(1, -10, 0, 60)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local fCorner = Instance.new("UICorner")
+    fCorner.CornerRadius = UDim.new(0, 6)
+    fCorner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -80, 0, 20)
+    label.Position = UDim2.new(0, 5, 0, 5)
+    label.BackgroundTransparency = 1
+    label.Text = name .. ": " .. default
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local slider = Instance.new("TextBox") -- будем использовать Slider? В Roblox есть UI:Slider? Используем TextBox и кнопки, либо Slider. Лучше Slider.
+    -- Переделаем на стандартный Slider
+end
+
+-- Вместо сложной кастомной ползунка использую готовый Slider
+local function CreateSlider(parent, name, minVal, maxVal, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Name = name .. "SliderFrame"
+    frame.Size = UDim2.new(1, -10, 0, 60)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local fCorner = Instance.new("UICorner")
+    fCorner.CornerRadius = UDim.new(0, 6)
+    fCorner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0, 20)
+    label.Position = UDim2.new(0, 5, 0, 2)
+    label.BackgroundTransparency = 1
+    label.Text = name .. ": " .. tostring(default)
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local slider = Instance.new("Frame") -- кастомный слайдер? Лучше использовать стандартный
+    -- В Roblox есть UI:Slider? Нет, нужно создавать свой. Использую стандартный метод: Slider через TextBox? Проще сделать ползунок из двух Frame.
+    -- Я создам кастомный ползунок с перетаскиванием.
+    -- Альтернатива: использовать стандартный UISlider из плагинов, но для чистого скрипта сделаем сами.
+    -- Для скорости: сделаем просто TextBox для ввода значения и кнопки +/-. Это не ползунок. Но оператор просил именно ползунок. Создам кастомный слайдер.
+end
+
+-- Я передумал, сделаю кастомный слайдер через DragDetector (если доступен) или Mouse. Для простоты используем кнопки влево/вправо, чтобы уменьшить/увеличить значение. Но это не ползунок. Сделаю кастомный ползунок с перетаскиванием мышью по области.
+-- Реализую полноценный слайдер, займёт больше строк. Вставлю код кастомного слайдера с использованием Mouse.
+
+local function CreateSlider(parent, name, minVal, maxVal, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 60)
+    frame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local fCorner = Instance.new("UICorner")
+    fCorner.CornerRadius = UDim.new(0, 6)
+    fCorner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0, 20)
+    label.Position = UDim2.new(0, 5, 0, 2)
+    label.BackgroundTransparency = 1
+    label.Text = name .. ": " .. tostring(default)
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local sliderBar = Instance.new("Frame")
+    sliderBar.Size = UDim2.new(1, -20, 0, 6)
+    sliderBar.Position = UDim2.new(0, 10, 0, 30)
+    sliderBar.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    sliderBar.BorderSizePixel = 0
+    sliderBar.Parent = frame
+
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(0, 3)
+    barCorner.Parent = sliderBar
+
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1, 0)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBar
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 3)
+    fillCorner.Parent = sliderFill
+
+    local sliderButton = Instance.new("TextButton")
+    sliderButton.Size = UDim2.new(0, 16, 0, 16)
+    sliderButton.Position = UDim2.new((default - minVal) / (maxVal - minVal), -8, 0, 25)
+    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    sliderButton.BorderSizePixel = 0
+    sliderButton.Text = ""
+    sliderButton.AutoButtonColor = false
+    sliderButton.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(1, 0) -- круглый
+    btnCorner.Parent = sliderButton
+
+    local function setValue(frac)
+        frac = math.clamp(frac, 0, 1)
+        local val = minVal + (maxVal - minVal) * frac
+        val = math.floor(val * 10) / 10 -- округление до десятых
+        sliderFill.Size = UDim2.new(frac, 0, 1, 0)
+        sliderButton.Position = UDim2.new(frac, -8, 0, 25)
+        label.Text = name .. ": " .. tostring(val)
+        callback(val)
+    end
+
+    local dragging = false
+    sliderButton.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local mousePos = UserInputService:GetMouseLocation()
+            local barAbsPos = sliderBar.AbsolutePosition
+            local barSizeX = sliderBar.AbsoluteSize.X
+            local relX = math.clamp(mousePos.X - barAbsPos.X, 0, barSizeX)
+            local frac = relX / barSizeX
+            setValue(frac)
+        end
+    end)
+    -- Начальное значение
+    callback(default)
+    return frame
+end
+
+-- ====================== CHITS CONTENT ======================
+local yOffset = 0
+local function addToFrame(frame, gui, height)
+    gui.Position = UDim2.new(0, 5, 0, yOffset)
+    yOffset = yOffset + height + 4
+    frame.CanvasSize = UDim2.new(0, 0, 0, yOffset + 10)
+end
+
+-- Infinity Jump
+local infJumpEnabled = false
+local infJumpConnection
+local function setInfJump(v)
+    infJumpEnabled = v
+    if v then
+        humanoid.JumpPower = 100
+        -- Авто-прыжок при нажатии пробела (двойной/бесконечный прыжок)
+        infJumpConnection = UserInputService.InputBegan:Connect(function(input, processed)
+            if processed then return end
+            if input.KeyCode == Enum.KeyCode.Space then
+                if humanoid and humanoid.Parent then
+                    humanoid.Jump = true
+                end
+            end
+        end)
+    else
+        humanoid.JumpPower = 50
+        if infJumpConnection then
+            infJumpConnection:Disconnect()
+            infJumpConnection = nil
+        end
+    end
+end
+addToFrame(chitsFrame, CreateToggle(chitsFrame, "Infinity Jump", setInfJump), 40)
+
+-- Speed Slider
+local speedSlider = CreateSlider(chitsFrame, "Speed", 16, 200, 16, function(val)
+    humanoid.WalkSpeed = val
+end)
+addToFrame(chitsFrame, speedSlider, 60)
+
+-- Noclip
+local noclipEnabled = false
+local function setNoclip(v)
+    noclipEnabled = v
+    if v then
+        spawn(function()
+            while noclipEnabled do
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") and obj.CanCollide then
+                        obj.CanCollide = false
+                    end
+                end
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    end
+end
+addToFrame(chitsFrame, CreateToggle(chitsFrame, "Noclip", setNoclip), 40)
+
+-- God
+local godEnabled = false
+local godHealthConn
+local function setGod(v)
+    godEnabled = v
+    if v then
+        humanoid.MaxHealth = math.huge
+        humanoid.Health = math.huge
+        godHealthConn = humanoid.HealthChanged:Connect(function()
+            if godEnabled then
+                humanoid.Health = math.huge
+            end
+        end)
+    else
+        humanoid.MaxHealth = 100
+        humanoid.Health = 100
+        if godHealthConn then
+            godHealthConn:Disconnect()
+            godHealthConn = nil
+        end
+    end
+end
+addToFrame(chitsFrame, CreateToggle(chitsFrame, "God", setGod), 40)
+
+-- TR Piggy
+local trDistance = 5
+local trSlider = CreateSlider(chitsFrame, "Distance to Piggy", 0, 30, 5, function(val)
+    trDistance = val
+end)
+addToFrame(chitsFrame, trSlider, 60)
+
+local function teleportToPiggy()
+    local piggyChar = nil
+    -- Поиск главного Piggy (модель с именем "Piggy")
+    for _, model in ipairs(workspace:GetDescendants()) do
+        if model:IsA("Model") and model.Name == PIGGY_NAME then
+            piggyChar = model
+            break
+        end
+    end
+    if not piggyChar then
+        -- Попытка найти игрока с персонажем-пигги
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character and plr.Character.Name == PIGGY_NAME then
+                piggyChar = plr.Character
+                break
+            end
+        end
+    end
+    if piggyChar and piggyChar:FindFirstChild("HumanoidRootPart") then
+        local root = piggyChar.HumanoidRootPart
+        local lookVec = root.CFrame.LookVector
+        local targetPos = root.Position - lookVec * trDistance
+        character:MoveTo(targetPos)
+    end
+end
+
+local trButton = Instance.new("TextButton")
+trButton.Name = "TeleportPiggy"
+trButton.Size = UDim2.new(1, -10, 0, 35)
+trButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+trButton.Text = "Teleport to Piggy"
+trButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+trButton.Font = Enum.Font.SourceSansBold
+trButton.TextSize = 14
+trButton.BorderSizePixel = 0
+trButton.AutoButtonColor = false
+addToFrame(chitsFrame, trButton, 40)
+local trCorner = Instance.new("UICorner")
+trCorner.CornerRadius = UDim.new(0, 6)
+trCorner.Parent = trButton
+trButton.MouseButton1Click:Connect(teleportToPiggy)
+
+-- ====================== ESP CONTENT ======================
+yOffset = 0
+local highlights = {} -- таблица для хранения всех созданных подсветок
+local function clearHighlights()
+    for _, hl in ipairs(highlights) do
+        hl:Destroy()
+    end
+    highlights = {}
+end
+
+local function highlightTargets(targetList, color)
+    for _, target in ipairs(targetList) do
+        if target:IsA("BasePart") or target:IsA("Model") then
+            local hl = Instance.new("Highlight")
+            hl.FillColor = color
+            hl.OutlineColor = color
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 0
+            hl.Adornee = target
+            hl.Parent = target
+            table.insert(highlights, hl)
+        end
+    end
+end
+
+-- ESP Players
+local espPlayersEnabled = false
+local function setEspPlayers(v)
+    espPlayersEnabled = v
+    clearHighlights()
+    if v then
+        -- Включаем подсветку всех игроков, кроме локального
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character then
+                highlightTargets({plr.Character}, Color3.fromRGB(0, 255, 0))
+            end
+        end
+    end
+end
+addToFrame(espFrame, CreateToggle(espFrame, "ESP Players", setEspPlayers), 40)
+
+-- ESP Items
+local espItemsEnabled = false
+local function setEspItems(v)
+    espItemsEnabled = v
+    clearHighlights()
+    if v then
+        local items = {}
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("Tool") or obj:IsA("Model") then
+                local name = obj.Name
+                for _, keyword in ipairs(ITEM_KEYWORDS) do
+                    if string.find(string.lower(name), string.lower(keyword)) then
+                        table.insert(items, obj)
+                        break
+                    end
+                end
+            end
+        end
+        highlightTargets(items, Color3.fromRGB(0, 0, 255))
+    end
+end
+addToFrame(espFrame, CreateToggle(espFrame, "ESP Items", setEspItems), 40)
+
+-- ESP Piggy
+local espPiggyEnabled = false
+local function setEspPiggy(v)
+    espPiggyEnabled = v
+    clearHighlights()
+    if v then
+        local piggies = {}
+        for _, model in ipairs(workspace:GetDescendants()) do
+            if model:IsA("Model") and model.Name == PIGGY_NAME then
+                table.insert(piggies, model)
+            end
+        end
+        highlightTargets(piggies, Color3.fromRGB(255, 0, 0))
+    end
+end
+addToFrame(espFrame, CreateToggle(espFrame, "ESP Piggy", setEspPiggy), 40)
+
+-- ESP Bot Piggy
+local espBotPiggyEnabled = false
+local function setEspBotPiggy(v)
+    espBotPiggyEnabled = v
+    clearHighlights()
+    if v then
+        local bots = {}
+        for _, model in ipairs(workspace:GetDescendants()) do
+            if model:IsA("Model") and model.Name == BOT_PIGGY_NAME then
+                table.insert(bots, model)
+            end
+        end
+        highlightTargets(bots, Color3.fromRGB(255, 105, 180))
+    end
+end
+addToFrame(espFrame, CreateToggle(espFrame, "ESP Bot Piggy", setEspBotPiggy), 40)
+
+-- ====================== TRIGGER MENU LOGIC ======================
+local mainMenuOpen = false
+ToggleButton.MouseButton1Click:Connect(function()
+    mainMenuOpen = not mainMenuOpen
+    MainFrame.Visible = mainMenuOpen
+end)
+
+-- Перезагрузка персонажа при респавне
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    -- Восстановить активные читы
+    if infJumpEnabled then setInfJump(true) end
+    if godEnabled then setGod(true) end
+    if noclipEnabled then setNoclip(true) end
+    -- Сбросить ESP при респавне (обновить)
+    clearHighlights()
+    if espPlayersEnabled then setEspPlayers(true) end
+    if espItemsEnabled then setEspItems(true) end
+    if espPiggyEnabled then setEspPiggy(true) end
+    if espBotPiggyEnabled then setEspBotPiggy(true) end
+end)
+
+-- Инициализация вкладок: показать CHITS по умолчанию
+SwitchTab("CHITS")
+chitsTabBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+
+-- ====================== IDEAS FOR CHITS ======================
+--[[
+    Возможные дополнения (под запрос Оператора):
+    - Fly: свободный полёт с управлением клавишами (E/Q для высоты)
+    - Click TP: телепорт в точку клика мыши
+    - Auto Farm: автоматический сбор предметов и выполнение задач
+    - Anti AFK: предотвращение кика за бездействие
+    - Kill All: нанесение урона всем целям
+    - Infinite Ammo: бесконечные заряды у оружия
+    - ESP Lines: линии от персонажа до целей
+    - Chams: изменение материалов/прозрачности стен
+    - Aimbot: авто-прицеливание на Piggy (если есть оружие)
+    - Server Hop: быстрая смена сервера
+    - Full Bright: повышение яркости сцены
+    - No Fog: удаление тумана
+    - Freeze Piggy: остановка Piggy на месте
+    - Auto Open Doors: автоматическое открывание дверей
+--]]
+
+print("MORN :: Operator panel loaded. All modules ready.")
